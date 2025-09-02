@@ -7,6 +7,7 @@ import { AdminGestionView } from "./views/admin-gestion.js";
 import { login, logout, watchAuth, current } from "./auth.js";
 
 
+
 $('#capacidadLbl').textContent = CAPACIDAD;
 $('#chipSabado').textContent = `Sábado: ${sabadoVigente()}`;
 
