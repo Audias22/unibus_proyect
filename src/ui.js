@@ -13,8 +13,29 @@ export const TIPO_LABEL = {
 export const PRECIO = { ida_vuelta_1600:40, ida_vuelta_1730:40, solo_ida:20, solo_vuelta:20 };
 
 export const RUTAS = {
-  A: { nombre:'Bus A — San Vicente → Cabañas → Zacapa', paradas:['San Vicente (Parque)','Cabañas (Parque)','Zacapa (Centro)'] },
-  B: { nombre:'Bus B — San Vicente → Huite → Zacapa',   paradas:['San Vicente (Parque)','Huite (Parque)','Zacapa (Centro)'] }
+  A: {
+    nombre:'Bus A — San Vicente → Cabañas → Zacapa',
+    paradas:[
+      'San Vicente (Parque)',
+      'Cabañas (Parque)',
+      'El Cruce',
+      'Gasolinera Texaco',
+      'Entrada La Cruz',
+      'Zacapa (Centro)'
+    ]
+  },
+  B: {
+    nombre:'Bus B — San Vicente → Huite → Zacapa',
+    paradas:[
+      'San Vicente (Parque)',
+      'Huite (Parque)',
+      'Entrada El Molino',
+      'Entrada La Colonia',
+      'El Cruce',
+      'Gasolinera Texaco',
+      'Zacapa (Centro)'
+    ]
+  }
 };
 
 export const esc = s => (s??'').toString().replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));

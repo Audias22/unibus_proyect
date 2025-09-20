@@ -68,6 +68,16 @@ export function StudentView(){
       <div><label>Comentario (opcional)</label><textarea id="comentario" placeholder="Notas: referencia, lugar específico…"></textarea></div>
       <div class="muted">Evita duplicados: no te registres dos veces para la misma fecha + ruta/tipo.</div>
     </div>
+  </section>
+  <section class="card" id="qrSection" style="display:none;margin-top:24px;text-align:center">
+    <h2>Reserva realizada</h2>
+    <div id="qrMsg"></div>
+    <canvas id="qrCanvas" style="margin:16px auto;display:block;"></canvas>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-secondary" id="btnDescargarQR">Descargar QR</button>
+      <button class="btn btn-secondary" id="btnDescargarPDF">Descargar PDF</button>
+    </div>
+    <div class="muted" style="margin-top:8px">Muestra este QR al subir al bus.</div>
   </section>`;
 
   const rutaSel = $('#ruta'), paradaSel = $('#parada'), tipoSel=$('#tipoViaje'), hvSel=$('#horaVuelta'), uniSel=$('#universidad');
@@ -107,6 +117,49 @@ export function StudentView(){
 
   uniSel.onchange = ()=> $('#universidadOtra').style.display = (uniSel.value==='_otra')?'block':'none';
 
+
+  // Mostrar QR si existe en localStorage
+  function mostrarQRReserva(alerta=false) {
+    const qrData = localStorage.getItem('qrReserva');
+    const qrMsg = localStorage.getItem('qrMsg');
+    if (qrData && qrMsg) {
+      $('#qrSection').style.display = 'block';
+      $('#qrMsg').textContent = qrMsg;
+      const qr = new QRious({ element: $('#qrCanvas'), value: qrData, size: 200 });
+      $('#btnDescargarQR').onclick = function() {
+        const link = document.createElement('a');
+        link.download = 'reserva_unibus_qr.png';
+        link.href = $('#qrCanvas').toDataURL();
+        link.click();
+      };
+      $('#btnDescargarPDF').onclick = function() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const imgData = $('#qrCanvas').toDataURL('image/png');
+        doc.setFontSize(16);
+        doc.text('Reserva UniBus Zacapa', 20, 20);
+        doc.setFontSize(12);
+        doc.text($('#qrMsg').textContent, 20, 30);
+        doc.addImage(imgData, 'PNG', 50, 40, 100, 100);
+        doc.save('reserva_unibus_qr.pdf');
+      };
+      // Solo mostrar la alerta si se indica (tras reservar)
+      if(alerta) {
+        setTimeout(()=>{
+          if (window.Swal) {
+            Swal.fire({
+              icon: 'info',
+              title: '¡Reserva completada!',
+              text: 'Descarga tu ticket antes de salir de este sitio.',
+              confirmButtonText: 'Entendido',
+              customClass: {popup: 'swal2-border-radius'}
+            });
+          }
+        }, 300);
+      }
+    }
+  }
+
   async function guardar(){
     const nombre=$('#nombre').value.trim();
     const telefono=$('#telefono').value.trim();
@@ -122,16 +175,25 @@ export function StudentView(){
     if(tipo!=='solo_vuelta' && (!ruta || !parada)){ toast('Selecciona ruta y parada.'); return; }
 
     try{
-      await create({
+      // Crear reserva y obtener ID
+      const docRef = await create({
         nombre, telefono, universidad:uni, fecha, ruta:ruta||'', parada:parada||'',
         tipo, horaVuelta, comentario, precio: PRECIO[tipo], jornadaId: sab
       });
       $('#nombre').value=''; $('#telefono').value=''; $('#comentario').value='';
       toast('Reserva enviada ✅');
+
+      // Generar QR con el ID de la reserva
+      const qrData = `UNIBUS|${docRef.id}`;
+      const qrMsg = `Reserva a nombre de ${nombre} para el bus ${ruta} el ${fecha}`;
+      localStorage.setItem('qrReserva', qrData);
+      localStorage.setItem('qrMsg', qrMsg);
+  mostrarQRReserva(true);
     }catch(e){ console.error(e); toast('No se pudo guardar.'); }
   }
 
   $('#btnGuardar').onclick = guardar;
+  mostrarQRReserva(false);
 
   // (Opcional) conteo de disponibles se actualizará cuando admin esté conectado;
   // aquí lo dejamos en "—" para no dar falsos positivos.
