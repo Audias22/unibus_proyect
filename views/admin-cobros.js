@@ -1,5 +1,5 @@
-import { $, esc, tipoTexto, PRECIO, sabadoVigente, toast } from "../ui.js";
-import { listenByJornada, setPagado } from "../reservas.js";
+import { $, esc, tipoTexto, PRECIO, sabadoVigente, toast } from "../src/ui.js";
+import { listenByJornada, setPagado } from "../src/reservas.js";
 
 let stop = null, data = [];
 

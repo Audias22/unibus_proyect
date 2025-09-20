@@ -1,5 +1,5 @@
-import { $, RUTAS, PRECIO, sabadoVigente, tipoTexto, CAPACIDAD, claveCap, toast } from "../ui.js";
-import { create } from "../reservas.js";
+import { $, RUTAS, PRECIO, sabadoVigente, tipoTexto, CAPACIDAD, claveCap, toast } from "../src/ui.js";
+import { create, listenByJornada } from "../src/reservas.js";
 
 export function StudentView(){
   const sab = sabadoVigente();
@@ -71,17 +71,41 @@ export function StudentView(){
   </section>`;
 
   const rutaSel = $('#ruta'), paradaSel = $('#parada'), tipoSel=$('#tipoViaje'), hvSel=$('#horaVuelta'), uniSel=$('#universidad');
+  const disponiblesLbl = $('#disponibles');
 
-  uniSel.onchange = ()=> $('#universidadOtra').style.display = (uniSel.value==='_otra')?'block':'none';
+  // Actualizar asientos disponibles en tiempo real
+  function actualizarDisponibles() {
+    disponiblesLbl.textContent = '—';
+    // Solo mostrar si hay ruta y tipo seleccionados
+    const ruta = rutaSel.value, tipo = tipoSel.value, fecha = $('#fecha').value;
+    if (!ruta || !tipo || !fecha) return;
+    // Solo cuenta reservas para la misma fecha, ruta y tipo
+    if (typeof window._stopDisponibles === 'function') window._stopDisponibles();
+    window._stopDisponibles = listenByJornada(sab, snap => {
+      // Filtrar por ruta y tipo
+      const reservas = snap.docs.map(d=>d.data()).filter(r => r.ruta === ruta && r.tipo === tipo);
+      const ocupados = reservas.length;
+      disponiblesLbl.textContent = `${CAPACIDAD - ocupados}/${CAPACIDAD}`;
+    });
+  }
+
   rutaSel.onchange = ()=>{
     paradaSel.innerHTML = '<option value="">— Seleccionar —</option>';
     const r = rutaSel.value; if(!r) return;
     RUTAS[r].paradas.forEach(p=> paradaSel.insertAdjacentHTML('beforeend', `<option>${p}</option>`));
+    actualizarDisponibles();
   };
   tipoSel.onchange = ()=>{
     hvSel.style.display = (tipoSel.value==='solo_vuelta')?'block':'none';
     $('#costoLbl').textContent = tipoSel.value ? `Q${PRECIO[tipoSel.value].toFixed(2)}` : '—';
+    actualizarDisponibles();
   };
+  $('#fecha').onchange = actualizarDisponibles;
+
+  // Inicializar disponibles al cargar
+  setTimeout(actualizarDisponibles, 0);
+
+  uniSel.onchange = ()=> $('#universidadOtra').style.display = (uniSel.value==='_otra')?'block':'none';
 
   async function guardar(){
     const nombre=$('#nombre').value.trim();

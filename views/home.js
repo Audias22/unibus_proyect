@@ -1,5 +1,5 @@
-import { $, CAPACIDAD, sabadoVigente } from "../ui.js";
-import { goto } from "../router.js";
+import { $, CAPACIDAD, sabadoVigente } from "../src/ui.js";
+import { goto } from "../src/router.js";
 
 export function HomeView(){
   $('#app').innerHTML = `

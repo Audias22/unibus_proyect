@@ -1,9 +1,9 @@
 import { $, CAPACIDAD, sabadoVigente } from "./ui.js";
 import { addRoute, start, goto } from "./router.js";
-import { HomeView } from "./views/home.js";
-import { StudentView } from "./views/student.js";
-import { AdminCobrosView } from "./views/admin-cobros.js";
-import { AdminGestionView } from "./views/admin-gestion.js";
+import { HomeView } from "../views/home.js";
+import { StudentView } from "../views/student.js";
+import { AdminCobrosView } from "../views/admin-cobros.js";
+import { AdminGestionView } from "../views/admin-gestion.js";
 import { login, logout, watchAuth, current } from "./auth.js";
 
 

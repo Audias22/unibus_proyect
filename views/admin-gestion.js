@@ -1,5 +1,5 @@
-import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../ui.js";
-import { listenByJornada, update, remove } from "../reservas.js";
+import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../src/ui.js";
+import { listenByJornada, update, remove } from "../src/reservas.js";
 
 let stop=null, rows=[];
 
