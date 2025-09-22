@@ -27,8 +27,15 @@ export function AdminGestionView(){
       <div class="row">
         <button class="btn btn-secondary" id="btnCSV">Exportar CSV</button>
         <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
+        <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
         <span class="right muted">Total: <b id="totales">0</b></span>
       </div>
+    </div>
+    <div id="qrScanPanel" style="display:none;margin-top:18px">
+      <h3>Escanear QR de reserva</h3>
+      <div id="qr-reader" style="width:320px;margin:auto;"></div>
+      <div id="qr-result" style="margin-top:10px"></div>
+      <button class="btn btn-secondary" id="btnCloseQR">Cerrar escáner</button>
     </div>
   </section>
 
@@ -36,6 +43,100 @@ export function AdminGestionView(){
     <h2>Lista de pasajeros</h2>
     <div id="tabla"></div>
   </section>`;
+
+  // Escaneo QR (mejorado)
+$('#btnScanQR').onclick = async () => {
+  $('#qrScanPanel').style.display = 'block';
+  $('#qr-result').textContent = 'Inicializando cámara…';
+
+  // 1) Cargar html5-qrcode si hace falta
+  async function ensureHtml5Qrcode() {
+    if (window.Html5Qrcode) return;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('No se pudo cargar html5-qrcode'));
+      document.body.appendChild(s);
+    });
+  }
+
+  // 2) Mensajes claros
+  function mapErr(e) {
+    const m = (e && e.message) ? e.message : String(e || '');
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost')
+      return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
+    if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
+    if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
+    if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
+    return 'No se pudo iniciar la cámara: ' + m;
+  }
+
+  try {
+    await ensureHtml5Qrcode();
+
+    // 3) Elegir cámara (trasera si existe)
+    const devices = await Html5Qrcode.getCameras();
+    if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
+    const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
+
+    const qrReader = new Html5Qrcode('qr-reader', {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+    });
+
+    await qrReader.start(
+      { deviceId: { exact: back.id } },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      // onSuccess
+      async (decodedText) => {
+        if (!decodedText.startsWith('UNIBUS|')) {
+          $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+          return;
+        }
+        const id = decodedText.split('|')[1];
+        $('#qr-result').textContent = 'Buscando reserva…';
+
+        try {
+          const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+          // OJO: desde /views/ la ruta correcta es ../firebase.js
+          const { db } = await import('../firebase.js');
+          const snap = await getDoc(doc(db, 'reservas', id));
+
+          if (snap.exists()) {
+            const r = snap.data();
+            $('#qr-result').innerHTML = `
+              <b>Reserva válida</b><br>
+              Nombre: ${r.nombre}<br>
+              Universidad: ${r.universidad}<br>
+              Ruta: ${r.ruta || '—'}<br>
+              Parada: ${r.parada || '—'}<br>
+              Tipo: ${r.tipo}<br>
+              Fecha: ${r.fecha}
+            `;
+            // Ejemplo opcional: marcar abordo/pagado aquí
+            // import('../reservas.js').then(({ updateReserva }) => updateReserva(id, { abordo: true }));
+          } else {
+            $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
+          }
+        } catch (e) {
+          $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+        } finally {
+          try { await qrReader.stop(); await qrReader.clear(); } catch {}
+        }
+      }
+    );
+
+    // 4) Cerrar
+    $('#btnCloseQR').onclick = async () => {
+      $('#qrScanPanel').style.display = 'none';
+      try { await qrReader.stop(); await qrReader.clear(); } catch {}
+    };
+
+  } catch (e) {
+    $('#qr-result').textContent = mapErr(e);
+  }
+};
+
 
   const sab = sabadoVigente();
   if(typeof stop==='function') stop();
