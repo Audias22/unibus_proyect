@@ -150,9 +150,13 @@ export function AdminGestionView(){
             } catch (e) {
               console.error(e);
               $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
-            } finally {
-              try { await qrReader.stop(); await qrReader.clear(); } catch {}
             }
+            // NO cerrar el escáner automáticamente, dejar que el usuario decida
+          },
+          // onError
+          (errorMessage) => {
+            // Mostrar el error en pantalla, pero no cerrar el escáner
+            $('#qr-result').innerHTML = `<span style="color:#f00">Error de cámara: ${esc(errorMessage)}</span>`;
           }
         );
 
