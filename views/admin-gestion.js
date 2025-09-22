@@ -1,7 +1,7 @@
-import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../src/ui.js";
-import { listenByJornada, update, remove } from "../src/reservas.js";
+import { $, esc, RUTAS, tipoTexto, sabadoVigente, csvVal, toast } from "../ui.js";
+import { listenByJornada, update, remove } from "../reservas.js";
 
-let stop=null, rows=[];
+let stop = null, rows = [];
 
 export function AdminGestionView(){
   $('#app').innerHTML = `
@@ -11,19 +11,34 @@ export function AdminGestionView(){
       <div class="grid-2">
         <div><label>Fecha</label><input type="date" id="f_fecha" value="${sabadoVigente()}"></div>
         <div>
-          <label>Ruta</label><select id="f_ruta"><option value="">Todas</option><option value="A">Bus A</option><option value="B">Bus B</option></select>
+          <label>Ruta</label>
+          <select id="f_ruta">
+            <option value="">Todas</option>
+            <option value="A">Bus A</option>
+            <option value="B">Bus B</option>
+          </select>
         </div>
       </div>
+
       <div class="grid-2">
         <div>
           <label>Tipo de viaje</label>
           <select id="f_tipo">
-            <option value="">Todos</option><option value="ida_vuelta_1600">Ida y vuelta 4:00 pm</option><option value="ida_vuelta_1730">Ida y vuelta 5:30 pm</option><option value="solo_ida">Solo ida</option><option value="solo_vuelta">Solo vuelta</option>
+            <option value="">Todos</option>
+            <option value="ida_vuelta_1600">Ida y vuelta 4:00 pm</option>
+            <option value="ida_vuelta_1730">Ida y vuelta 5:30 pm</option>
+            <option value="solo_ida">Solo ida</option>
+            <option value="solo_vuelta">Solo vuelta</option>
           </select>
-          <select id="f_hora" style="display:none;margin-top:8px"><option value="">— Hora —</option><option value="1600">4:00 pm</option><option value="1730">5:30 pm</option></select>
+          <select id="f_hora" style="display:none;margin-top:8px">
+            <option value="">— Hora —</option>
+            <option value="1600">4:00 pm</option>
+            <option value="1730">5:30 pm</option>
+          </select>
         </div>
         <div><label>Buscar</label><input id="f_q" placeholder="Nombre/Univ/Parada…"></div>
       </div>
+
       <div class="row">
         <button class="btn btn-secondary" id="btnCSV">Exportar CSV</button>
         <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
@@ -31,6 +46,7 @@ export function AdminGestionView(){
         <span class="right muted">Total: <b id="totales">0</b></span>
       </div>
     </div>
+
     <div id="qrScanPanel" style="display:none;margin-top:18px">
       <h3>Escanear QR de reserva</h3>
       <div id="qr-reader" style="width:320px;margin:auto;"></div>
@@ -44,135 +60,105 @@ export function AdminGestionView(){
     <div id="tabla"></div>
   </section>`;
 
-// Escaneo QR (robusto con multi-CDN)
-$('#btnScanQR').onclick = async () => {
-  $('#qrScanPanel').style.display = 'block';
-  $('#qr-result').textContent = 'Inicializando cámara…';
+  // ========= Escaneo QR (simple: usa la librería global cargada en index.html) =========
+  $('#btnScanQR').onclick = async () => {
+    $('#qrScanPanel').style.display = 'block';
+    $('#qr-result').textContent = 'Inicializando cámara…';
 
-  // ===== Carga robusta de la librería =====
-  function loadScript(src, timeoutMs = 8000) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      let done = false;
-      const t = setTimeout(() => {
-        if (!done) { done = true; s.remove(); reject(new Error('timeout')); }
-      }, timeoutMs);
-      s.src = src;
-      s.async = true;
-      s.onload = () => { if (!done) { done = true; clearTimeout(t); resolve(); } };
-      s.onerror = () => { if (!done) { done = true; clearTimeout(t); reject(new Error('network')); } };
-      document.head.appendChild(s);
-    });
-  }
-
-  async function ensureHtml5Qrcode() {
-    if (window.Html5Qrcode) return;
-    const cdns = [
-      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/minified/html5-qrcode.min.js',
-      'https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.10/html5-qrcode.min.js'
-    ];
-    let lastErr;
-    for (const url of cdns) {
-      try { await loadScript(url, 8000); if (window.Html5Qrcode) return; } catch (e) { lastErr = e; }
+    // Si la librería no está, avisamos claro.
+    if (!window.Html5Qrcode) {
+      $('#qr-result').textContent = 'Falta la librería QR. Asegúrate de tener <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/minified/html5-qrcode.min.js"></script> en index.html';
+      return;
     }
-    throw new Error('No se pudo cargar html5-qrcode');
-  }
 
-  // ===== Mapeo de errores legibles =====
-  function mapErr(e) {
-    const m = (e && e.message) ? e.message : String(e || '');
-    if (m.includes('No se pudo cargar html5-qrcode')) return m;
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost')
-    return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
-    if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
-    if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
-    if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
-    if (/timeout/i.test(m)) return 'Tiempo de espera al cargar la librería.';
-    return 'No se pudo iniciar la cámara: ' + m;
-  }
+    function mapErr(e){
+      const m = (e && e.message) ? e.message : String(e || '');
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost')
+        return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
+      if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
+      if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
+      if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
+      return 'No se pudo iniciar la cámara: ' + m;
+    }
 
-  try {
-    await ensureHtml5Qrcode();
+    let qrReader = null;
+    try {
+      const devices = await Html5Qrcode.getCameras();
+      if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
+      const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
 
-    // Elegir cámara (trasera si existe)
-    const devices = await Html5Qrcode.getCameras();
-    if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
-    const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
+      qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
 
-    const qrReader = new Html5Qrcode('qr-reader', {
-      formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ]
-    });
-
-    await qrReader.start(
-      { deviceId: { exact: back.id } },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      // onSuccess
-      async (decodedText) => {
-        if (!decodedText.startsWith('UNIBUS|')) {
-          $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
-          return;
-        }
-        const id = decodedText.split('|')[1];
-        $('#qr-result').textContent = 'Buscando reserva…';
-
-        try {
-          const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-          // Desde /views/, la ruta a firebase es una arriba
-          const { db } = await import('../firebase.js');
-          const snap = await getDoc(doc(db, 'reservas', id));
-          if (snap.exists()) {
-            const r = snap.data();
-            $('#qr-result').innerHTML = `
-              <b>Reserva válida</b><br>
-              Nombre: ${r.nombre}<br>
-              Universidad: ${r.universidad}<br>
-              Ruta: ${r.ruta || '—'}<br>
-              Parada: ${r.parada || '—'}<br>
-              Tipo: ${r.tipo}<br>
-              Fecha: ${r.fecha}
-            `;
-          } else {
-            $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
+      await qrReader.start(
+        { deviceId: { exact: back.id } },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        // onSuccess
+        async (decodedText) => {
+          if (!decodedText.startsWith('UNIBUS|')) {
+            $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+            return;
           }
-        } catch (e) {
-          console.error(e);
-          $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
-        } finally {
-          try { await qrReader.stop(); await qrReader.clear(); } catch {}
+          const id = decodedText.split('|')[1];
+          $('#qr-result').textContent = 'Buscando reserva…';
+
+          try {
+            const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+            const { db } = await import('../firebase.js'); // desde /views/ sube un nivel
+            const snap = await getDoc(doc(db, 'reservas', id));
+            if (snap.exists()) {
+              const r = snap.data();
+              $('#qr-result').innerHTML = `
+                <b>Reserva válida</b><br>
+                Nombre: ${r.nombre}<br>
+                Universidad: ${r.universidad}<br>
+                Ruta: ${r.ruta || '—'}<br>
+                Parada: ${r.parada || '—'}<br>
+                Tipo: ${r.tipo}<br>
+                Fecha: ${r.fecha}
+              `;
+              // (opcional) marcar abordo/pagado aquí con update(id, { ... })
+            } else {
+              $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
+            }
+          } catch (e) {
+            console.error(e);
+            $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+          } finally {
+            try { await qrReader.stop(); await qrReader.clear(); } catch {}
+          }
         }
-      }
-    );
+      );
 
-    $('#btnCloseQR').onclick = async () => {
-      $('#qrScanPanel').style.display = 'none';
-      try { await qrReader.stop(); await qrReader.clear(); } catch {}
-    };
+      $('#btnCloseQR').onclick = async () => {
+        $('#qrScanPanel').style.display = 'none';
+        try { await qrReader.stop(); await qrReader.clear(); } catch {}
+      };
 
-  } catch (e) {
-    console.error(e);
-    $('#qr-result').textContent = mapErr(e);
-  }
-};
+    } catch (e) {
+      console.error(e);
+      $('#qr-result').textContent = mapErr(e);
+    }
+  };
 
+  // ========= Datos & tabla =========
   const sab = sabadoVigente();
-  if(typeof stop==='function') stop();
+  if (typeof stop === 'function') stop();
   stop = listenByJornada(sab, snap=>{
-    rows = snap.docs.map(d=>({ _id:d.id, ...d.data() }));
+    rows = snap.docs.map(d=>({ _id: d.id, ...d.data() }));
     render();
   });
 
-  $('#f_tipo').oninput = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta')?'block':'none'; render(); };
+  $('#f_tipo').oninput = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta') ? 'block' : 'none'; render(); };
   $('#f_hora').oninput = render;
   $('#f_ruta').oninput = render;
   $('#f_q').oninput = render;
-  $('#f_fecha').onchange = ()=>{ /* por simplicidad, fija sábado vigente */ render(); };
+  $('#f_fecha').onchange = ()=>{ render(); };
   $('#btnCSV').onclick = exportCSV;
   $('#btnWA').onclick  = sendWA;
 }
 
 function frows(){
-  const f= $('#f_fecha').value, r=$('#f_ruta').value, t=$('#f_tipo').value, h=$('#f_hora').value, q=($('#f_q').value||'').toLowerCase().trim();
+  const f = $('#f_fecha').value, r = $('#f_ruta').value, t = $('#f_tipo').value, h = $('#f_hora').value, q = ($('#f_q').value||'').toLowerCase().trim();
   return rows
     .filter(x=> !f || x.fecha===f)
     .filter(x=> !r || x.ruta===r || x.tipo==='solo_vuelta')
@@ -182,9 +168,11 @@ function frows(){
 }
 
 function render(){
-  const tabla=$('#tabla'); const list=frows().sort((a,b)=> (a.creadoEn?.seconds||0)-(b.creadoEn?.seconds||0));
-  $('#totales').textContent=list.length;
+  const tabla = $('#tabla');
+  const list = frows().sort((a,b)=> (a.creadoEn?.seconds||0)-(b.creadoEn?.seconds||0));
+  $('#totales').textContent = list.length;
   if(!list.length){ tabla.innerHTML = `<div class="empty">Sin resultados.</div>`; return; }
+
   let html = `<table class="rwd"><thead><tr>
     <th>#</th><th>Nombre</th><th>Univ.</th><th>Ruta</th><th>Parada</th><th>Tipo</th><th>Fecha</th><th>Precio</th><th>Teléfono</th><th>Comentario</th><th>Acciones</th>
   </tr></thead><tbody>`;
@@ -193,7 +181,7 @@ function render(){
       <td data-label="#">${i+1}</td>
       <td data-label="Nombre">${esc(r.nombre)}</td>
       <td data-label="Univ.">${esc(r.universidad)}</td>
-      <td data-label="Ruta">${r.ruta? `<span class="pill">${r.ruta} · ${esc(RUTAS[r.ruta]?.nombre||'')}</span>`:'-'}</td>
+      <td data-label="Ruta">${r.ruta ? `<span class="pill">${r.ruta} · ${esc(RUTAS[r.ruta]?.nombre||'')}</span>` : '-'}</td>
       <td data-label="Parada">${esc(r.parada||'-')}</td>
       <td data-label="Tipo">${esc(tipoTexto(r))}</td>
       <td data-label="Fecha">${r.fecha}</td>
@@ -211,29 +199,29 @@ function render(){
 
   tabla.onclick = async (e)=>{
     const b = e.target.closest('button'); if(!b) return;
-    const id = b.dataset.id, act=b.dataset.act;
-    if(act==='del'){ if(confirm('¿Eliminar?')){ try{ await remove(id); }catch(e){toast('No se pudo eliminar')} } }
-    if(act==='edit'){ editRow(id); }
+    const id = b.dataset.id, act = b.dataset.act;
+    if (act==='del'){ if(confirm('¿Eliminar?')){ try{ await remove(id); }catch{ toast('No se pudo eliminar'); } } }
+    if (act==='edit'){ editRow(id); }
   };
 }
 
 function editRow(id){
   const r = rows.find(x=>x._id===id); if(!r) return;
   const nombre = prompt('Nombre', r.nombre); if(nombre===null) return;
-  try{ update(id, { nombre }); } catch{ toast('No se pudo actualizar'); }
+  try{ update(id, { nombre }); }catch{ toast('No se pudo actualizar'); }
 }
 
 function exportCSV(){
-  const list=frows();
+  const list = frows();
   if(!list.length) return toast('Sin datos');
   const head=['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Precio','Telefono','Comentario'];
   const lines=[head.join(',')];
   list.forEach((r,i)=>{
-    const rutaTxt=r.ruta?`${r.ruta} ${RUTAS[r.ruta]?.nombre||''}`:'—';
+    const rutaTxt = r.ruta ? `${r.ruta} ${RUTAS[r.ruta]?.nombre||''}` : '—';
     lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,`Q${(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
   });
-  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); 
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 
 function sendWA(){
