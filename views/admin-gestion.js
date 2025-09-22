@@ -4,7 +4,7 @@ import { current } from "../src/auth.js";
 
 let stop = null, rows = [];
 
-// ====== Beeps sin tocar index.html (Web Audio) ======
+// ====== Beeps (WebAudio, sin tocar index.html) ======
 function beep(freq = 880, dur = 120) {
   try {
     const A = new (window.AudioContext || window.webkitAudioContext)();
@@ -89,10 +89,7 @@ export function AdminGestionView(){
       <div id="qr-reader" style="width:320px;margin:auto;"></div>
       <div id="qr-result" style="margin-top:10px"></div>
       <button class="btn btn-secondary" id="btnCloseQR">Cerrar escáner</button>
-
-      <div id="manualPanel" style="margin-top:12px">
-        <label class="muted">Validación manual desde la lista (sin QR): usa los botones de cada fila.</label>
-      </div>
+      <div id="manualPanel" class="muted" style="margin-top:12px">También puedes validar desde la lista (botones en cada fila).</div>
     </div>
   </section>
 
@@ -101,7 +98,7 @@ export function AdminGestionView(){
     <div id="tabla"></div>
   </section>`;
 
-  // ========= Escaneo QR (usa html5-qrcode ya cargado en index.html) =========
+  // ========= Escaneo QR =========
   $('#btnScanQR').onclick = async () => {
     $('#qrScanPanel').style.display = 'block';
     $('#qr-result').textContent = 'Inicializando cámara…';
@@ -122,7 +119,6 @@ export function AdminGestionView(){
     }
 
     let qrReader = null;
-    let onSuccess = null;
 
     try {
       const devices = await Html5Qrcode.getCameras();
@@ -131,7 +127,7 @@ export function AdminGestionView(){
 
       qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
 
-      onSuccess = async (decodedText) => {
+      const onSuccess = async (decodedText) => {
         if (!decodedText.startsWith('UNIBUS|')) {
           playErr();
           $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
@@ -184,7 +180,7 @@ export function AdminGestionView(){
   stop = listenByJornada(sab, snap=>{
     rows = snap.docs.map(d=>({ _id: d.id, ...d.data() }));
     render();
-    qFlush(); // intenta sincronizar si hubiera cola pendiente
+    qFlush();
   });
 
   $('#f_tipo').oninput   = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta') ? 'block' : 'none'; render(); };
@@ -196,7 +192,7 @@ export function AdminGestionView(){
   $('#btnWA').onclick    = sendWA;
 }
 
-// ------- UI de detalle (se usa tanto para QR como para validar manual desde la lista) -------
+// ------- UI de detalle (para QR) -------
 async function renderReservaParaValidar(id, r, targetSel){
   const a = r.abordos || {};
   const idaDone = !!a.idaAt;
@@ -239,7 +235,6 @@ async function renderReservaParaValidar(id, r, targetSel){
   const rid = id;
   const disable = (bId)=>{ const b=document.getElementById(bId); if(b){ b.disabled=true; b.textContent='Registrado ✓'; } };
 
-  // Con offline fallback
   const tryIda   = async ()=>{ try{ await marcarAbordoIda(rid, adminEmail); playOk(); toast('Ida registrada'); disable('btnRegIda'); }catch{ const q=qRead(); q.push({id:rid,tipo:'ida',ts:Date.now()}); qWrite(q); playOk(); toast('Ida registrada (offline)'); disable('btnRegIda'); } };
   const tryR16   = async ()=>{ try{ await marcarAbordoRegreso(rid,'1600',adminEmail); playOk(); toast('Regreso 4:00 registrado'); disable('btnReg1600'); }catch{ const q=qRead(); q.push({id:rid,tipo:'r1600',ts:Date.now()}); qWrite(q); playOk(); toast('Regreso 4:00 (offline)'); disable('btnReg1600'); } };
   const tryR17   = async ()=>{ try{ await marcarAbordoRegreso(rid,'1730',adminEmail); playOk(); toast('Regreso 5:30 registrado'); disable('btnReg1730'); }catch{ const q=qRead(); q.push({id:rid,tipo:'r1730',ts:Date.now()}); qWrite(q); playOk(); toast('Regreso 5:30 (offline)'); disable('btnReg1730'); } };
@@ -249,7 +244,7 @@ async function renderReservaParaValidar(id, r, targetSel){
   if (puedeR17 && !r17Done) $('#btnReg1730')?.addEventListener('click', tryR17);
 }
 
-// ------- Filtros y render de tabla -------
+// ------- Filtros, contadores y tabla -------
 function frows(){
   const f = $('#f_fecha').value, r = $('#f_ruta').value, t = $('#f_tipo').value, h = $('#f_hora').value, q = ($('#f_q').value||'').toLowerCase().trim();
   return rows
@@ -300,19 +295,21 @@ function render(){
 
     const pill = (ok, label) => ok ? `<span class="pill pill-ok">${label} ✓</span>` : `<span class="pill pill-pend">${label}</span>`;
 
-    let acts = `
+    // Acciones de validación desde la lista (responsive wrapper)
+    let actsInner = `
       <button class="btn btn-secondary" data-act="edit" data-id="${r._id}">Editar</button>
       <button class="btn btn-danger" data-act="del" data-id="${r._id}">Eliminar</button>
     `;
-    // Acciones de validación desde la lista
-    if (puedeIda) acts += ` <button class="btn btn-primary btn-sm" data-act="v_ida" data-id="${r._id}" ${idaOk?'disabled':''}>Validar Ida</button>`;
-    if (puedeR16) acts += ` <button class="btn btn-primary btn-sm" data-act="v_r1600" data-id="${r._id}" ${r16Ok?'disabled':''}>Regreso 4:00</button>`;
-    if (puedeR17) acts += ` <button class="btn btn-primary btn-sm" data-act="v_r1730" data-id="${r._id}" ${r17Ok?'disabled':''}>Regreso 5:30</button>`;
+    if (puedeIda) actsInner += ` <button class="btn btn-primary btn-sm" data-act="v_ida" data-id="${r._id}" ${idaOk?'disabled':''}>Validar Ida</button>`;
+    if (puedeR16) actsInner += ` <button class="btn btn-primary btn-sm" data-act="v_r1600" data-id="${r._id}" ${r16Ok?'disabled':''}>Regreso 4:00</button>`;
+    if (puedeR17) actsInner += ` <button class="btn btn-primary btn-sm" data-act="v_r1730" data-id="${r._id}" ${r17Ok?'disabled':''}>Regreso 5:30</button>`;
 
-    // Vender regreso rápido (si aplica)
-    if (r.tipo==='solo_ida' || r.tipo?.startsWith('ida_vuelta')) {
-      acts += ` <button class="btn btn-secondary btn-sm" data-act="sell_return" data-id="${r._id}">Vender regreso</button>`;
+    // Vender regreso rápido: SOLO si es solo_ida (ya no mostramos para ida_vuelta ni solo_vuelta)
+    if (r.tipo === 'solo_ida') {
+      actsInner += ` <button class="btn btn-secondary btn-sm" data-act="sell_return" data-id="${r._id}">Vender regreso</button>`;
     }
+
+    const acts = `<div class="row-actions">${actsInner}</div>`;
 
     html += `<tr>
       <td data-label="#">${i+1}</td>
@@ -369,7 +366,7 @@ function render(){
     }
 
     if (act==='sell_return'){
-      // Vender regreso rápido
+      // Vender regreso rápido (solo_ida)
       const hora = prompt('Hora de regreso (1600 o 1730)', '1600');
       if(hora!=='1600' && hora!=='1730') return toast('Hora inválida');
       const precioStr = prompt('Precio (Q)', (row.precio||0).toFixed(2));
@@ -398,7 +395,7 @@ function render(){
   };
 }
 
-// ------- util: Export CSV / WhatsApp (igual que ya tenías) -------
+// ------- Export CSV / WhatsApp -------
 function exportCSV(){
   const list = frows();
   if(!list.length) return toast('Sin datos');
