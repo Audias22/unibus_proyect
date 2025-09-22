@@ -130,7 +130,7 @@ export function AdminGestionView(){
 
             try {
               const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-              const { db } = await import('../firebase.js'); // desde /views sube 1 nivel
+              const { db } = await import('../../src/firebase.js'); // desde /views sube 2 niveles en producción
               const snap = await getDoc(doc(db, 'reservas', id));
               if (snap.exists()) {
                 const r = snap.data();
