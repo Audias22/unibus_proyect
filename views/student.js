@@ -125,7 +125,13 @@ export function StudentView(){
     if (qrData && qrMsg) {
       $('#qrSection').style.display = 'block';
       $('#qrMsg').textContent = qrMsg;
-      const qr = new QRious({ element: $('#qrCanvas'), value: qrData, size: 200 });
+      const qr = new QRious({ 
+        element: $('#qrCanvas'), 
+        value: qrData, 
+        size: 320, // tamaño grande para mejor lectura
+        background: '#fff', // fondo blanco
+        foreground: '#000'  // QR negro
+      });
       $('#btnDescargarQR').onclick = function() {
         const link = document.createElement('a');
         link.download = 'reserva_unibus_qr.png';
