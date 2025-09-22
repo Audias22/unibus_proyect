@@ -1,230 +1,216 @@
-// views/admin-gestion.js  — versión robusta anti-pantalla-azul
-import * as UI from "../src/ui.js";
-import * as RES from "../src/reservas.js";
+import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../src/ui.js";
+import { listenByJornada, update, remove, marcarAbordoIda, marcarAbordoRegreso } from "../src/reservas.js";
+import { current } from "../src/auth.js";
 
-// Fallbacks por si algún export faltara: evita que reviente el módulo.
-const $        = UI.$        || (sel => document.querySelector(sel));
-const esc      = UI.esc      || (s => String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
-const RUTAS    = UI.RUTAS    || {};
-const tipoTexto= UI.tipoTexto|| (r => r?.tipo || '—');
-const csvVal   = UI.csvVal   || (x => `"${String(x ?? '').replace(/"/g,'""')}"`);
-const toast    = UI.toast    || (m => alert(m));
-const sabadoVigente = UI.sabadoVigente || (() => {
-  // Fallback: devuelve el próximo sábado en formato YYYY-MM-DD
-  const d = new Date(); const day = d.getDay(); // 0=Dom..6=Sáb
-  const add = (6 - day + 7) % 7;
-  d.setDate(d.getDate() + add);
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-});
-
-const listenByJornada = RES.listenByJornada || ((_sab, cb)=>({}));
-const update  = RES.update  || (()=>Promise.resolve());
-const remove  = RES.remove  || (()=>Promise.resolve());
-
-let stop = null;
-let rows = [];
+let stop = null, rows = [];
 
 export function AdminGestionView(){
-  try {
-    $('#app').innerHTML = `
-    <section class="card">
-      <h2>Filtros & Acciones</h2>
-      <div class="grid">
-        <div class="grid-2">
-          <div><label>Fecha</label><input type="date" id="f_fecha"></div>
-          <div>
-            <label>Ruta</label>
-            <select id="f_ruta">
-              <option value="">Todas</option>
-              <option value="A">Bus A</option>
-              <option value="B">Bus B</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid-2">
-          <div>
-            <label>Tipo de viaje</label>
-            <select id="f_tipo">
-              <option value="">Todos</option>
-              <option value="ida_vuelta_1600">Ida y vuelta 4:00 pm</option>
-              <option value="ida_vuelta_1730">Ida y vuelta 5:30 pm</option>
-              <option value="solo_ida">Solo ida</option>
-              <option value="solo_vuelta">Solo vuelta</option>
-            </select>
-            <select id="f_hora" style="display:none;margin-top:8px">
-              <option value="">— Hora —</option>
-              <option value="1600">4:00 pm</option>
-              <option value="1730">5:30 pm</option>
-            </select>
-          </div>
-          <div><label>Buscar</label><input id="f_q" placeholder="Nombre/Univ/Parada…"></div>
-        </div>
-
-        <div class="row">
-          <button class="btn btn-secondary" id="btnCSV">Exportar CSV</button>
-          <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
-          <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
-          <span class="right muted">Total: <b id="totales">0</b></span>
+  $('#app').innerHTML = `
+  <section class="card">
+    <h2>Filtros & Acciones</h2>
+    <div class="grid">
+      <div class="grid-2">
+        <div><label>Fecha</label><input type="date" id="f_fecha" value="${sabadoVigente()}"></div>
+        <div>
+          <label>Ruta</label>
+          <select id="f_ruta">
+            <option value="">Todas</option>
+            <option value="A">Bus A</option>
+            <option value="B">Bus B</option>
+          </select>
         </div>
       </div>
-
-      <div id="qrScanPanel" style="display:none;margin-top:18px">
-        <h3>Escanear QR de reserva</h3>
-        <div id="qr-reader" style="width:320px;margin:auto;"></div>
-        <div id="qr-result" style="margin-top:10px"></div>
-        <button class="btn btn-secondary" id="btnCloseQR">Cerrar escáner</button>
+      <div class="grid-2">
+        <div>
+          <label>Tipo de viaje</label>
+          <select id="f_tipo">
+            <option value="">Todos</option>
+            <option value="ida_vuelta_1600">${TIPO_LABEL?.ida_vuelta_1600 || 'Ida y vuelta 4:00 pm'}</option>
+            <option value="ida_vuelta_1730">${TIPO_LABEL?.ida_vuelta_1730 || 'Ida y vuelta 5:30 pm'}</option>
+            <option value="solo_ida">${TIPO_LABEL?.solo_ida || 'Solo ida'}</option>
+            <option value="solo_vuelta">${TIPO_LABEL?.solo_vuelta || 'Solo vuelta'}</option>
+          </select>
+          <select id="f_hora" style="display:none;margin-top:8px">
+            <option value="">— Hora —</option>
+            <option value="1600">4:00 pm</option>
+            <option value="1730">5:30 pm</option>
+          </select>
+        </div>
+        <div><label>Buscar</label><input id="f_q" placeholder="Nombre/Univ/Parada…"></div>
       </div>
-    </section>
+      <div class="row">
+        <button class="btn btn-secondary" id="btnCSV">Exportar CSV</button>
+        <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
+        <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
+        <span class="right muted">Total: <b id="totales">0</b></span>
+      </div>
+    </div>
 
-    <section class="card">
-      <h2>Lista de pasajeros</h2>
-      <div id="tabla"></div>
-    </section>`;
+    <div id="qrScanPanel" style="display:none;margin-top:18px">
+      <h3>Escanear QR de reserva</h3>
+      <div id="qr-reader" style="width:320px;margin:auto;"></div>
+      <div id="qr-result" style="margin-top:10px"></div>
+      <button class="btn btn-secondary" id="btnCloseQR">Cerrar escáner</button>
+    </div>
+  </section>
 
-    // Set default sábado
-    $('#f_fecha').value = sabadoVigente();
+  <section class="card">
+    <h2>Lista de pasajeros</h2>
+    <div id="tabla"></div>
+  </section>`;
 
-    // ====== Escaneo QR (usa la librería global agregada en index.html) ======
-    $('#btnScanQR').onclick = async () => {
-      $('#qrScanPanel').style.display = 'block';
-      $('#qr-result').textContent = 'Inicializando cámara…';
+  // ========= Escaneo QR (usa html5-qrcode ya cargado en index.html) =========
+  $('#btnScanQR').onclick = async () => {
+    $('#qrScanPanel').style.display = 'block';
+    $('#qr-result').textContent = 'Inicializando cámara…';
 
-      if (!window.Html5Qrcode) {
-        $('#qr-result').textContent =
-          'Falta la librería QR. Agrega en index.html: <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/minified/html5-qrcode.min.js"></script>';
-        return;
-      }
+    if (!window.Html5Qrcode) {
+      $('#qr-result').textContent = 'Falta la librería QR. Asegúrate de cargar html5-qrcode.min.js en index.html';
+      return;
+    }
 
-      function mapErr(e){
-        const m = (e && e.message) ? e.message : String(e || '');
-        if (location.protocol !== 'https:' && location.hostname !== 'localhost')
-          return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
-        if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
-        if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
-        if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
-        return 'No se pudo iniciar la cámara: ' + m;
-      }
+    function mapErr(e){
+      const m = (e && e.message) ? e.message : String(e || '');
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost')
+        return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
+      if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
+      if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
+      if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
+      return 'No se pudo iniciar la cámara: ' + m;
+    }
 
-      let qrReader = null;
-      try {
-        const devices = await Html5Qrcode.getCameras();
-        if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
-        const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
+    let qrReader = null;
+    try {
+      const devices = await Html5Qrcode.getCameras();
+      if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
+      const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
 
-        qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
+      qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
 
-        await qrReader.start(
-          { deviceId: { exact: back.id } },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          // onSuccess
-          async (decodedText) => {
-            if (!decodedText.startsWith('UNIBUS|')) {
-              $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+      await qrReader.start(
+        { deviceId: { exact: back.id } },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        // onSuccess
+        async (decodedText) => {
+          if (!decodedText.startsWith('UNIBUS|')) {
+            $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+            return;
+          }
+          const id = decodedText.split('|')[1];
+          $('#qr-result').textContent = 'Buscando reserva…';
+
+          try {
+            const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+            const { db } = await import('../src/firebase.js');
+            const snap = await getDoc(doc(db, 'reservas', id));
+            if (!snap.exists()) {
+              $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
               return;
             }
-            const id = decodedText.split('|')[1];
-            $('#qr-result').textContent = 'Buscando reserva…';
 
-            // Detener el escaneo para que la UI quede fija
-            try { await qrReader.stop(); await qrReader.clear(); } catch {}
+            const r = snap.data();
+            const a = r.abordos || {};
+            const idaDone = !!a.idaAt;
+            const r16Done = !!a.regreso_1600At;
+            const r17Done = !!a.regreso_1730At;
 
-            try {
-              const { getDoc, doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-              const { db } = await import('../../src/firebase.js');
-              const snap = await getDoc(doc(db, 'reservas', id));
-              if (snap.exists()) {
-                const r = snap.data();
-                // Prevenir doble abordo
-                let abordo = r.abordo === true;
-                let abordoMsg = abordo ? '<span style="color:green">(Ya abordó)</span>' : '';
-                $('#qr-result').innerHTML = `
-                  <b>Reserva válida</b> ${abordoMsg}<br>
-                  Nombre: ${esc(r.nombre)}<br>
-                  Universidad: ${esc(r.universidad)}<br>
-                  Ruta: ${esc(r.ruta || '—')}<br>
-                  Parada: ${esc(r.parada || '—')}<br>
-                  Tipo: ${esc(r.tipo)}<br>
-                  Fecha: ${esc(r.fecha)}<br>
-                  <button class=\"btn btn-success\" id=\"btnAbordo\" ${abordo ? 'disabled' : ''}>Marcar como abordó</button>
-                `;
-                // Botón para marcar abordo
-                const btnAbordo = document.getElementById('btnAbordo');
-                if (btnAbordo && !abordo) {
-                  btnAbordo.onclick = async () => {
-                    btnAbordo.disabled = true;
-                    btnAbordo.textContent = 'Marcando...';
-                    try {
-                      await updateDoc(doc(db, 'reservas', id), { abordo: true });
-                      $('#qr-result').innerHTML += '<br><span style="color:green">¡Marcado como abordó!</span>';
-                    } catch (err) {
-                      btnAbordo.disabled = false;
-                      btnAbordo.textContent = 'Marcar como abordó';
-                      $('#qr-result').innerHTML += '<br><span style="color:#f00">Error al marcar abordo</span>';
-                    }
-                  };
-                }
-              } else {
-                $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
-              }
-            } catch (e) {
-              console.error(e);
-              $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+            const tipo = r.tipo;            // ida_vuelta_1600 | ida_vuelta_1730 | solo_ida | solo_vuelta
+            const horaVuelta = r.horaVuelta || '';
+
+            const puedeIda = (tipo === 'solo_ida' || tipo.startsWith('ida_vuelta'));
+            const puedeR16 = (tipo === 'solo_vuelta' && horaVuelta==='1600') || (tipo === 'ida_vuelta_1600');
+            const puedeR17 = (tipo === 'solo_vuelta' && horaVuelta==='1730') || (tipo === 'ida_vuelta_1730');
+
+            const pill = (ok, label) => ok ? `<span class="pill pill-ok">${label} ✓</span>` : `<span class="pill pill-pend">${label}</span>`;
+
+            $('#qr-result').innerHTML = `
+              <div class="qr-card">
+                <div class="qr-top">
+                  <div>
+                    <b>Reserva válida</b><br>
+                    Nombre: ${esc(r.nombre)}<br>
+                    Univ.: ${esc(r.universidad)}<br>
+                    Tipo: ${esc(tipoTexto(r))}
+                  </div>
+                  <div class="qr-badges">
+                    ${pill(idaDone,'Ida')}
+                    ${pill(r16Done,'Regreso 4:00')}
+                    ${pill(r17Done,'Regreso 5:30')}
+                  </div>
+                </div>
+                <div class="qr-actions">
+                  ${puedeIda ? `<button class="btn btn-primary" id="btnRegIda" ${idaDone?'disabled':''}>Registrar Ida</button>`:''}
+                  ${puedeR16 ? `<button class="btn btn-primary" id="btnReg1600" ${r16Done?'disabled':''}>Registrar Regreso 4:00</button>`:''}
+                  ${puedeR17 ? `<button class="btn btn-primary" id="btnReg1730" ${r17Done?'disabled':''}>Registrar Regreso 5:30</button>`:''}
+                </div>
+                <div class="muted" style="margin-top:8px">Fecha: ${esc(r.fecha)} ${r.ruta ? `· Ruta ${esc(r.ruta)} (${esc(RUTAS[r.ruta]?.nombre||'')})` : ''}</div>
+              </div>
+            `;
+
+            const adminEmail = (current && current()) ? current().email : null;
+            const disableBtn = (id)=>{ const b=document.getElementById(id); if(b){ b.disabled=true; b.textContent='Registrado ✓'; } };
+            const rid = snap.id;
+
+            if (puedeIda && !idaDone) {
+              const b = document.getElementById('btnRegIda');
+              if (b) b.onclick = async ()=>{
+                try { await marcarAbordoIda(rid, adminEmail); toast('Ida registrada'); disableBtn('btnRegIda'); }
+                catch { toast('No se pudo registrar Ida'); }
+              };
             }
-            // Ahora el escáner solo se reinicia si el usuario lo cierra y vuelve a abrir
-          },
-          // onError
-          (errorMessage) => {
-            // Mostrar el error en pantalla, pero no cerrar el escáner
-            $('#qr-result').innerHTML = `<span style="color:#f00">Error de cámara: ${esc(errorMessage)}</span>`;
+            if (puedeR16 && !r16Done) {
+              const b = document.getElementById('btnReg1600');
+              if (b) b.onclick = async ()=>{
+                try { await marcarAbordoRegreso(rid, '1600', adminEmail); toast('Regreso 4:00 registrado'); disableBtn('btnReg1600'); }
+                catch { toast('No se pudo registrar Regreso 4:00'); }
+              };
+            }
+            if (puedeR17 && !r17Done) {
+              const b = document.getElementById('btnReg1730');
+              if (b) b.onclick = async ()=>{
+                try { await marcarAbordoRegreso(rid, '1730', adminEmail); toast('Regreso 5:30 registrado'); disableBtn('btnReg1730'); }
+                catch { toast('No se pudo registrar Regreso 5:30'); }
+              };
+            }
+          } catch (e) {
+            console.error(e);
+            $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+          } finally {
+            try { await qrReader.stop(); await qrReader.clear(); } catch {}
           }
-        );
+        }
+      );
 
-        $('#btnCloseQR').onclick = async () => {
-          $('#qrScanPanel').style.display = 'none';
-          try { await qrReader.stop(); await qrReader.clear(); } catch {}
-        };
+      $('#btnCloseQR').onclick = async () => {
+        $('#qrScanPanel').style.display = 'none';
+        try { await qrReader.stop(); await qrReader.clear(); } catch {}
+      };
 
-      } catch (e) {
-        console.error(e);
-        $('#qr-result').textContent = mapErr(e);
-      }
-    };
+    } catch (e) {
+      console.error(e);
+      $('#qr-result').textContent = mapErr(e);
+    }
+  };
 
-    // ====== Datos & tabla ======
-    const sab = $('#f_fecha').value;
-    if (typeof stop === 'function') stop();
-    stop = listenByJornada(sab, snap=>{
-      rows = (snap?.docs || []).map(d=>({ _id: d.id, ...d.data?.() }));
-      render();
-    });
+  // ========= Datos & tabla (todo lo tuyo se mantiene) =========
+  const sab = sabadoVigente();
+  if(typeof stop==='function') stop();
+  stop = listenByJornada(sab, snap=>{
+    rows = snap.docs.map(d=>({ _id:d.id, ...d.data() }));
+    render();
+  });
 
-    $('#f_tipo').oninput = ()=>{
-      $('#f_hora').style.display = ($('#f_tipo').value === 'solo_vuelta') ? 'block' : 'none';
-      render();
-    };
-    $('#f_hora').oninput = render;
-    $('#f_ruta').oninput = render;
-    $('#f_q').oninput    = render;
-    $('#f_fecha').onchange = ()=>{ render(); };
-    $('#btnCSV').onclick = exportCSV;
-    $('#btnWA').onclick  = sendWA;
-
-  } catch (err) {
-    // Si algo explota, lo mostramos en la UI (nada de pantalla azul)
-    console.error(err);
-    $('#app').innerHTML = `
-      <section class="card">
-        <h2>Error en Admin → Gestión</h2>
-        <pre style="white-space:pre-wrap">${esc(err?.message || err)}</pre>
-      </section>`;
-  }
+  $('#f_tipo').oninput = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta')?'block':'none'; render(); };
+  $('#f_hora').oninput = render;
+  $('#f_ruta').oninput = render;
+  $('#f_q').oninput = render;
+  $('#f_fecha').onchange = ()=>{ /* si manejas jornada distinta aquí, ajusta */ render(); };
+  $('#btnCSV').onclick = exportCSV;
+  $('#btnWA').onclick  = sendWA;
 }
 
 function frows(){
-  const f = $('#f_fecha').value, r = $('#f_ruta').value, t = $('#f_tipo').value, h = $('#f_hora').value, q = ($('#f_q').value||'').toLowerCase().trim();
+  const f= $('#f_fecha').value, r=$('#f_ruta').value, t=$('#f_tipo').value, h=$('#f_hora').value, q=($('#f_q').value||'').toLowerCase().trim();
   return rows
     .filter(x=> !f || x.fecha===f)
     .filter(x=> !r || x.ruta===r || x.tipo==='solo_vuelta')
@@ -234,25 +220,22 @@ function frows(){
 }
 
 function render(){
-  const tabla = $('#tabla');
-  const list = frows().sort((a,b)=> ((a?.creadoEn?.seconds||0)-(b?.creadoEn?.seconds||0)));
-  $('#totales').textContent = list.length;
+  const tabla=$('#tabla'); const list=frows().sort((a,b)=> (a?.creadoEn?.seconds||0)-(b?.creadoEn?.seconds||0));
+  $('#totales').textContent=list.length;
   if(!list.length){ tabla.innerHTML = `<div class="empty">Sin resultados.</div>`; return; }
-
   let html = `<table class="rwd"><thead><tr>
     <th>#</th><th>Nombre</th><th>Univ.</th><th>Ruta</th><th>Parada</th><th>Tipo</th><th>Fecha</th><th>Precio</th><th>Teléfono</th><th>Comentario</th><th>Acciones</th>
   </tr></thead><tbody>`;
   list.forEach((r,i)=>{
-    const rutaTxt = r.ruta ? `${r.ruta} · ${esc(RUTAS[r.ruta]?.nombre||'')}` : '-';
     html += `<tr>
       <td data-label="#">${i+1}</td>
       <td data-label="Nombre">${esc(r.nombre)}</td>
       <td data-label="Univ.">${esc(r.universidad)}</td>
-      <td data-label="Ruta">${rutaTxt}</td>
+      <td data-label="Ruta">${r.ruta? `<span class="pill">${r.ruta} · ${esc(RUTAS[r.ruta]?.nombre||'')}</span>`:'-'}</td>
       <td data-label="Parada">${esc(r.parada||'-')}</td>
       <td data-label="Tipo">${esc(tipoTexto(r))}</td>
-      <td data-label="Fecha">${esc(r.fecha)}</td>
-      <td data-label="Precio">Q${Number(r.precio||0).toFixed(2)}</td>
+      <td data-label="Fecha">${r.fecha}</td>
+      <td data-label="Precio">Q${(r.precio||0).toFixed(2)}</td>
       <td data-label="Teléfono">${esc(r.telefono||'')}</td>
       <td data-label="Comentario">${esc(r.comentario||'')}</td>
       <td data-label="Acciones">
@@ -266,35 +249,35 @@ function render(){
 
   tabla.onclick = async (e)=>{
     const b = e.target.closest('button'); if(!b) return;
-    const id = b.dataset.id, act = b.dataset.act;
-    if (act==='del'){ if(confirm('¿Eliminar?')){ try{ await remove(id); }catch{ toast('No se pudo eliminar'); } } }
-    if (act==='edit'){ editRow(id); }
+    const id = b.dataset.id, act=b.dataset.act;
+    if(act==='del'){ if(confirm('¿Eliminar?')){ try{ await remove(id); }catch(e){toast('No se pudo eliminar')} } }
+    if(act==='edit'){ editRow(id); }
   };
 }
 
 function editRow(id){
   const r = rows.find(x=>x._id===id); if(!r) return;
   const nombre = prompt('Nombre', r.nombre); if(nombre===null) return;
-  update(id, { nombre }).catch(()=> toast('No se pudo actualizar'));
+  try{ update(id, { nombre }); } catch{ toast('No se pudo actualizar'); }
 }
 
 function exportCSV(){
-  const list = frows();
+  const list=frows();
   if(!list.length) return toast('Sin datos');
   const head=['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Precio','Telefono','Comentario'];
   const lines=[head.join(',')];
   list.forEach((r,i)=>{
-    const rutaTxt = r.ruta ? `${r.ruta} ${RUTAS[r.ruta]?.nombre||''}` : '—';
-    lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,`Q${Number(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
+    const rutaTxt=r.ruta?`${r.ruta} ${RUTAS[r.ruta]?.nombre||''}`:'—';
+    lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,`Q${(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
   });
-  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); 
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 
 function sendWA(){
   const list=frows(); if(!list.length) return toast('Sin datos');
-  const totalQ=list.reduce((a,r)=>a+(Number(r.precio)||0),0);
+  const totalQ=list.reduce((a,r)=>a+(r.precio||0),0);
   let t=`*Lista UniBus*%0AFecha: ${sabadoVigente()}%0ATotal: Q${totalQ.toFixed(2)}%0A%0A`;
-  list.forEach((x,i)=>{ t+=`${i+1}. ${encodeURIComponent(x.nombre||'')} — ${encodeURIComponent(tipoTexto(x))} — Q${Number(x.precio||0).toFixed(2)}%0A`; });
+  list.forEach((x,i)=>{ t+=`${i+1}. ${encodeURIComponent(x.nombre||'')} — ${encodeURIComponent(tipoTexto(x))} — Q${(x.precio||0).toFixed(2)}%0A`; });
   window.open(`https://wa.me/?text=${t}`,'_blank');
 }

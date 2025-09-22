@@ -47,4 +47,14 @@ th{color:var(--muted);text-align:left}
   table.rwd td:first-child{border-top:0}
   table.rwd td::before{content:attr(data-label);display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
   table.rwd td[data-label="Acciones"]{display:flex;gap:8px;justify-content:flex-end}
+
+/* --- QR Validation UI tweaks --- */
+.qr-card{ border:1px solid var(--line); border-radius:12px; padding:12px; background:#0b1220; }
+.qr-top{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.qr-badges{ display:flex; gap:6px; flex-wrap:wrap; }
+.pill{ display:inline-block; padding:4px 8px; border-radius:999px; font-size:.85rem; border:1px solid transparent; background:#0b1220; }
+.pill-ok{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+.pill-pend{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
+.qr-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+
 }
