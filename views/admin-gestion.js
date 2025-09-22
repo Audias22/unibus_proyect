@@ -128,6 +128,9 @@ export function AdminGestionView(){
             const id = decodedText.split('|')[1];
             $('#qr-result').textContent = 'Buscando reserva…';
 
+            // Detener el escaneo para que la UI quede fija
+            try { await qrReader.stop(); await qrReader.clear(); } catch {}
+
             try {
               const { getDoc, doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
               const { db } = await import('../../src/firebase.js');
@@ -145,7 +148,7 @@ export function AdminGestionView(){
                   Parada: ${esc(r.parada || '—')}<br>
                   Tipo: ${esc(r.tipo)}<br>
                   Fecha: ${esc(r.fecha)}<br>
-                  <button class="btn btn-success" id="btnAbordo" ${abordo ? 'disabled' : ''}>Marcar como abordó</button>
+                  <button class=\"btn btn-success\" id=\"btnAbordo\" ${abordo ? 'disabled' : ''}>Marcar como abordó</button>
                 `;
                 // Botón para marcar abordo
                 const btnAbordo = document.getElementById('btnAbordo');
@@ -170,7 +173,7 @@ export function AdminGestionView(){
               console.error(e);
               $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
             }
-            // NO cerrar el escáner automáticamente, dejar que el usuario decida
+            // Ahora el escáner solo se reinicia si el usuario lo cierra y vuelve a abrir
           },
           // onError
           (errorMessage) => {
