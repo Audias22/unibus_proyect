@@ -83,8 +83,8 @@ $('#btnScanQR').onclick = async () => {
   function mapErr(e) {
     const m = (e && e.message) ? e.message : String(e || '');
     if (m.includes('No se pudo cargar html5-qrcode')) return m;
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost'))
-      return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost')
+    return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
     if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
     if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
     if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
