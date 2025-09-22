@@ -129,21 +129,40 @@ export function AdminGestionView(){
             $('#qr-result').textContent = 'Buscando reserva…';
 
             try {
-              const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-              const { db } = await import('../../src/firebase.js'); // desde /views sube 2 niveles en producción
+              const { getDoc, doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+              const { db } = await import('../../src/firebase.js');
               const snap = await getDoc(doc(db, 'reservas', id));
               if (snap.exists()) {
                 const r = snap.data();
+                // Prevenir doble abordo
+                let abordo = r.abordo === true;
+                let abordoMsg = abordo ? '<span style="color:green">(Ya abordó)</span>' : '';
                 $('#qr-result').innerHTML = `
-                  <b>Reserva válida</b><br>
+                  <b>Reserva válida</b> ${abordoMsg}<br>
                   Nombre: ${esc(r.nombre)}<br>
                   Universidad: ${esc(r.universidad)}<br>
                   Ruta: ${esc(r.ruta || '—')}<br>
                   Parada: ${esc(r.parada || '—')}<br>
                   Tipo: ${esc(r.tipo)}<br>
-                  Fecha: ${esc(r.fecha)}
+                  Fecha: ${esc(r.fecha)}<br>
+                  <button class="btn btn-success" id="btnAbordo" ${abordo ? 'disabled' : ''}>Marcar como abordó</button>
                 `;
-                // (Opcional) marcar abordo/pagado aquí: await update(id, { abordo: true });
+                // Botón para marcar abordo
+                const btnAbordo = document.getElementById('btnAbordo');
+                if (btnAbordo && !abordo) {
+                  btnAbordo.onclick = async () => {
+                    btnAbordo.disabled = true;
+                    btnAbordo.textContent = 'Marcando...';
+                    try {
+                      await updateDoc(doc(db, 'reservas', id), { abordo: true });
+                      $('#qr-result').innerHTML += '<br><span style="color:green">¡Marcado como abordó!</span>';
+                    } catch (err) {
+                      btnAbordo.disabled = false;
+                      btnAbordo.textContent = 'Marcar como abordó';
+                      $('#qr-result').innerHTML += '<br><span style="color:#f00">Error al marcar abordo</span>';
+                    }
+                  };
+                }
               } else {
                 $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
               }
