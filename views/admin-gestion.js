@@ -1,6 +1,6 @@
 // views/admin-gestion.js  — versión robusta anti-pantalla-azul
-import * as UI from "../ui.js";
-import * as RES from "../reservas.js";
+import * as UI from "../src/ui.js";
+import * as RES from "../src/reservas.js";
 
 // Fallbacks por si algún export faltara: evita que reviente el módulo.
 const $        = UI.$        || (sel => document.querySelector(sel));
