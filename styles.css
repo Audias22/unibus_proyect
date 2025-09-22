@@ -57,4 +57,19 @@ th{color:var(--muted);text-align:left}
 .pill-pend{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
 .qr-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 
+
+/* --- QR / Validación UI --- */
+.qr-card{ border:1px solid var(--line); border-radius:12px; padding:12px; background:#0b1220; }
+.qr-top{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.qr-badges{ display:flex; gap:6px; flex-wrap:wrap; }
+.pill{ display:inline-block; padding:4px 8px; border-radius:999px; font-size:.85rem; border:1px solid transparent; background:#0b1220; }
+.pill-ok{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0; }
+.pill-pend{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
+.qr-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.btn-sm{ padding:6px 10px; font-size:.85rem; }
+
+/* --- Contadores --- */
+.stats{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.stat-pill{ background:#0b1220; border:1px solid var(--line); border-radius:999px; padding:6px 10px; font-size:.9rem; }
+
 }

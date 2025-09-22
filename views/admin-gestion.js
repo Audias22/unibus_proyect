@@ -1,8 +1,45 @@
 import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../src/ui.js";
-import { listenByJornada, update, remove, marcarAbordoIda, marcarAbordoRegreso } from "../src/reservas.js";
+import { listenByJornada, update, remove, create, marcarAbordoIda, marcarAbordoRegreso } from "../src/reservas.js";
 import { current } from "../src/auth.js";
 
 let stop = null, rows = [];
+
+// ====== Beeps sin tocar index.html (Web Audio) ======
+function beep(freq = 880, dur = 120) {
+  try {
+    const A = new (window.AudioContext || window.webkitAudioContext)();
+    const o = A.createOscillator(), g = A.createGain();
+    o.type = "sine"; o.frequency.value = freq;
+    o.connect(g); g.connect(A.destination);
+    g.gain.setValueAtTime(0.0001, A.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.2, A.currentTime + 0.02);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, A.currentTime + dur/1000);
+    o.stop(A.currentTime + dur/1000 + 0.05);
+  } catch {}
+}
+const playOk = () => beep(880, 120);
+const playErr = () => beep(220, 180);
+
+// ====== Cola offline ======
+const QKEY = "unibus_queue";
+function qRead(){ try{ return JSON.parse(localStorage.getItem(QKEY)||"[]"); }catch{ return []; } }
+function qWrite(arr){ localStorage.setItem(QKEY, JSON.stringify(arr)); }
+async function qFlush(){
+  const q = qRead(); if(!q.length) return;
+  const adminEmail = current()?.email || null;
+  const remaining = [];
+  for(const it of q){
+    try{
+      if(it.tipo === "ida")   await marcarAbordoIda(it.id, adminEmail);
+      if(it.tipo === "r1600") await marcarAbordoRegreso(it.id, "1600", adminEmail);
+      if(it.tipo === "r1730") await marcarAbordoRegreso(it.id, "1730", adminEmail);
+    }catch{ remaining.push(it); }
+  }
+  qWrite(remaining);
+  if(!remaining.length) toast("Sincronización completada");
+}
+window.addEventListener("online", qFlush);
 
 export function AdminGestionView(){
   $('#app').innerHTML = `
@@ -44,6 +81,7 @@ export function AdminGestionView(){
         <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
         <span class="right muted">Total: <b id="totales">0</b></span>
       </div>
+      <div id="stats" class="stats"></div>
     </div>
 
     <div id="qrScanPanel" style="display:none;margin-top:18px">
@@ -51,6 +89,10 @@ export function AdminGestionView(){
       <div id="qr-reader" style="width:320px;margin:auto;"></div>
       <div id="qr-result" style="margin-top:10px"></div>
       <button class="btn btn-secondary" id="btnCloseQR">Cerrar escáner</button>
+
+      <div id="manualPanel" style="margin-top:12px">
+        <label class="muted">Validación manual desde la lista (sin QR): usa los botones de cada fila.</label>
+      </div>
     </div>
   </section>
 
@@ -65,7 +107,7 @@ export function AdminGestionView(){
     $('#qr-result').textContent = 'Inicializando cámara…';
 
     if (!window.Html5Qrcode) {
-      $('#qr-result').textContent = 'Falta la librería QR. Asegúrate de cargar html5-qrcode.min.js en index.html';
+      $('#qr-result').textContent = 'Falta la librería QR (html5-qrcode).';
       return;
     }
 
@@ -80,6 +122,8 @@ export function AdminGestionView(){
     }
 
     let qrReader = null;
+    let onSuccess = null;
+
     try {
       const devices = await Html5Qrcode.getCameras();
       if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
@@ -87,98 +131,40 @@ export function AdminGestionView(){
 
       qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
 
+      onSuccess = async (decodedText) => {
+        if (!decodedText.startsWith('UNIBUS|')) {
+          playErr();
+          $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+          return;
+        }
+        const id = decodedText.split('|')[1];
+        $('#qr-result').textContent = 'Buscando reserva…';
+
+        try {
+          const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+          const { db } = await import('../src/firebase.js');
+          const snap = await getDoc(doc(db, 'reservas', id));
+          if (!snap.exists()) {
+            playErr();
+            $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
+            return;
+          }
+          const r = snap.data();
+          await renderReservaParaValidar(snap.id, r, '#qr-result');
+          playOk();
+        } catch (e) {
+          console.error(e);
+          playErr();
+          $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+        } finally {
+          try { await qrReader.stop(); await qrReader.clear(); } catch {}
+        }
+      };
+
       await qrReader.start(
         { deviceId: { exact: back.id } },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        // onSuccess
-        async (decodedText) => {
-          if (!decodedText.startsWith('UNIBUS|')) {
-            $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
-            return;
-          }
-          const id = decodedText.split('|')[1];
-          $('#qr-result').textContent = 'Buscando reserva…';
-
-          try {
-            const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-            const { db } = await import('../src/firebase.js');
-            const snap = await getDoc(doc(db, 'reservas', id));
-            if (!snap.exists()) {
-              $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
-              return;
-            }
-
-            const r = snap.data();
-            const a = r.abordos || {};
-            const idaDone = !!a.idaAt;
-            const r16Done = !!a.regreso_1600At;
-            const r17Done = !!a.regreso_1730At;
-
-            const tipo = r.tipo;            // ida_vuelta_1600 | ida_vuelta_1730 | solo_ida | solo_vuelta
-            const horaVuelta = r.horaVuelta || '';
-
-            const puedeIda = (tipo === 'solo_ida' || tipo.startsWith('ida_vuelta'));
-            const puedeR16 = (tipo === 'solo_vuelta' && horaVuelta==='1600') || (tipo === 'ida_vuelta_1600');
-            const puedeR17 = (tipo === 'solo_vuelta' && horaVuelta==='1730') || (tipo === 'ida_vuelta_1730');
-
-            const pill = (ok, label) => ok ? `<span class="pill pill-ok">${label} ✓</span>` : `<span class="pill pill-pend">${label}</span>`;
-
-            $('#qr-result').innerHTML = `
-              <div class="qr-card">
-                <div class="qr-top">
-                  <div>
-                    <b>Reserva válida</b><br>
-                    Nombre: ${esc(r.nombre)}<br>
-                    Univ.: ${esc(r.universidad)}<br>
-                    Tipo: ${esc(tipoTexto(r))}
-                  </div>
-                  <div class="qr-badges">
-                    ${pill(idaDone,'Ida')}
-                    ${pill(r16Done,'Regreso 4:00')}
-                    ${pill(r17Done,'Regreso 5:30')}
-                  </div>
-                </div>
-                <div class="qr-actions">
-                  ${puedeIda ? `<button class="btn btn-primary" id="btnRegIda" ${idaDone?'disabled':''}>Registrar Ida</button>`:''}
-                  ${puedeR16 ? `<button class="btn btn-primary" id="btnReg1600" ${r16Done?'disabled':''}>Registrar Regreso 4:00</button>`:''}
-                  ${puedeR17 ? `<button class="btn btn-primary" id="btnReg1730" ${r17Done?'disabled':''}>Registrar Regreso 5:30</button>`:''}
-                </div>
-                <div class="muted" style="margin-top:8px">Fecha: ${esc(r.fecha)} ${r.ruta ? `· Ruta ${esc(r.ruta)} (${esc(RUTAS[r.ruta]?.nombre||'')})` : ''}</div>
-              </div>
-            `;
-
-            const adminEmail = (current && current()) ? current().email : null;
-            const disableBtn = (id)=>{ const b=document.getElementById(id); if(b){ b.disabled=true; b.textContent='Registrado ✓'; } };
-            const rid = snap.id;
-
-            if (puedeIda && !idaDone) {
-              const b = document.getElementById('btnRegIda');
-              if (b) b.onclick = async ()=>{
-                try { await marcarAbordoIda(rid, adminEmail); toast('Ida registrada'); disableBtn('btnRegIda'); }
-                catch { toast('No se pudo registrar Ida'); }
-              };
-            }
-            if (puedeR16 && !r16Done) {
-              const b = document.getElementById('btnReg1600');
-              if (b) b.onclick = async ()=>{
-                try { await marcarAbordoRegreso(rid, '1600', adminEmail); toast('Regreso 4:00 registrado'); disableBtn('btnReg1600'); }
-                catch { toast('No se pudo registrar Regreso 4:00'); }
-              };
-            }
-            if (puedeR17 && !r17Done) {
-              const b = document.getElementById('btnReg1730');
-              if (b) b.onclick = async ()=>{
-                try { await marcarAbordoRegreso(rid, '1730', adminEmail); toast('Regreso 5:30 registrado'); disableBtn('btnReg1730'); }
-                catch { toast('No se pudo registrar Regreso 5:30'); }
-              };
-            }
-          } catch (e) {
-            console.error(e);
-            $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
-          } finally {
-            try { await qrReader.stop(); await qrReader.clear(); } catch {}
-          }
-        }
+        onSuccess
       );
 
       $('#btnCloseQR').onclick = async () => {
@@ -192,25 +178,80 @@ export function AdminGestionView(){
     }
   };
 
-  // ========= Datos & tabla (todo lo tuyo se mantiene) =========
+  // ========= Datos & tabla =========
   const sab = sabadoVigente();
-  if(typeof stop==='function') stop();
+  if (typeof stop === 'function') stop();
   stop = listenByJornada(sab, snap=>{
-    rows = snap.docs.map(d=>({ _id:d.id, ...d.data() }));
+    rows = snap.docs.map(d=>({ _id: d.id, ...d.data() }));
     render();
+    qFlush(); // intenta sincronizar si hubiera cola pendiente
   });
 
-  $('#f_tipo').oninput = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta')?'block':'none'; render(); };
-  $('#f_hora').oninput = render;
-  $('#f_ruta').oninput = render;
-  $('#f_q').oninput = render;
-  $('#f_fecha').onchange = ()=>{ /* si manejas jornada distinta aquí, ajusta */ render(); };
-  $('#btnCSV').onclick = exportCSV;
-  $('#btnWA').onclick  = sendWA;
+  $('#f_tipo').oninput   = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta') ? 'block' : 'none'; render(); };
+  $('#f_hora').oninput   = render;
+  $('#f_ruta').oninput   = render;
+  $('#f_q').oninput      = render;
+  $('#f_fecha').onchange = ()=>{ render(); };
+  $('#btnCSV').onclick   = exportCSV;
+  $('#btnWA').onclick    = sendWA;
 }
 
+// ------- UI de detalle (se usa tanto para QR como para validar manual desde la lista) -------
+async function renderReservaParaValidar(id, r, targetSel){
+  const a = r.abordos || {};
+  const idaDone = !!a.idaAt;
+  const r16Done = !!a.regreso_1600At;
+  const r17Done = !!a.regreso_1730At;
+
+  const tipo = r.tipo;
+  const horaVuelta = r.horaVuelta || '';
+  const puedeIda = (tipo === 'solo_ida' || tipo.startsWith('ida_vuelta'));
+  const puedeR16 = (tipo === 'solo_vuelta' && horaVuelta==='1600') || (tipo === 'ida_vuelta_1600');
+  const puedeR17 = (tipo === 'solo_vuelta' && horaVuelta==='1730') || (tipo === 'ida_vuelta_1730');
+
+  const pill = (ok, label) => ok ? `<span class="pill pill-ok">${label} ✓</span>` : `<span class="pill pill-pend">${label}</span>`;
+
+  $(targetSel).innerHTML = `
+    <div class="qr-card">
+      <div class="qr-top">
+        <div>
+          <b>Reserva válida</b><br>
+          Nombre: ${esc(r.nombre)}<br>
+          Univ.: ${esc(r.universidad)}<br>
+          Tipo: ${esc(tipoTexto(r))}
+        </div>
+        <div class="qr-badges">
+          ${pill(idaDone,'Ida')}
+          ${pill(r16Done,'Regreso 4:00')}
+          ${pill(r17Done,'Regreso 5:30')}
+        </div>
+      </div>
+      <div class="qr-actions">
+        ${puedeIda ? `<button class="btn btn-primary" id="btnRegIda" ${idaDone?'disabled':''}>Registrar Ida</button>`:''}
+        ${puedeR16 ? `<button class="btn btn-primary" id="btnReg1600" ${r16Done?'disabled':''}>Registrar Regreso 4:00</button>`:''}
+        ${puedeR17 ? `<button class="btn btn-primary" id="btnReg1730" ${r17Done?'disabled':''}>Registrar Regreso 5:30</button>`:''}
+      </div>
+      <div class="muted" style="margin-top:8px">Fecha: ${esc(r.fecha)} ${r.ruta ? `· Ruta ${esc(r.ruta)} (${esc(RUTAS[r.ruta]?.nombre||'')})` : ''}</div>
+    </div>
+  `;
+
+  const adminEmail = current()?.email || null;
+  const rid = id;
+  const disable = (bId)=>{ const b=document.getElementById(bId); if(b){ b.disabled=true; b.textContent='Registrado ✓'; } };
+
+  // Con offline fallback
+  const tryIda   = async ()=>{ try{ await marcarAbordoIda(rid, adminEmail); playOk(); toast('Ida registrada'); disable('btnRegIda'); }catch{ const q=qRead(); q.push({id:rid,tipo:'ida',ts:Date.now()}); qWrite(q); playOk(); toast('Ida registrada (offline)'); disable('btnRegIda'); } };
+  const tryR16   = async ()=>{ try{ await marcarAbordoRegreso(rid,'1600',adminEmail); playOk(); toast('Regreso 4:00 registrado'); disable('btnReg1600'); }catch{ const q=qRead(); q.push({id:rid,tipo:'r1600',ts:Date.now()}); qWrite(q); playOk(); toast('Regreso 4:00 (offline)'); disable('btnReg1600'); } };
+  const tryR17   = async ()=>{ try{ await marcarAbordoRegreso(rid,'1730',adminEmail); playOk(); toast('Regreso 5:30 registrado'); disable('btnReg1730'); }catch{ const q=qRead(); q.push({id:rid,tipo:'r1730',ts:Date.now()}); qWrite(q); playOk(); toast('Regreso 5:30 (offline)'); disable('btnReg1730'); } };
+
+  if (puedeIda && !idaDone) $('#btnRegIda')?.addEventListener('click', tryIda);
+  if (puedeR16 && !r16Done) $('#btnReg1600')?.addEventListener('click', tryR16);
+  if (puedeR17 && !r17Done) $('#btnReg1730')?.addEventListener('click', tryR17);
+}
+
+// ------- Filtros y render de tabla -------
 function frows(){
-  const f= $('#f_fecha').value, r=$('#f_ruta').value, t=$('#f_tipo').value, h=$('#f_hora').value, q=($('#f_q').value||'').toLowerCase().trim();
+  const f = $('#f_fecha').value, r = $('#f_ruta').value, t = $('#f_tipo').value, h = $('#f_hora').value, q = ($('#f_q').value||'').toLowerCase().trim();
   return rows
     .filter(x=> !f || x.fecha===f)
     .filter(x=> !r || x.ruta===r || x.tipo==='solo_vuelta')
@@ -219,14 +260,60 @@ function frows(){
     .filter(x=> !q || (String(x.nombre||'')+String(x.universidad||'')+String(x.parada||'')).toLowerCase().includes(q));
 }
 
+function stats(list){
+  let idaT=0, idaD=0, r16T=0, r16D=0, r17T=0, r17D=0;
+  list.forEach(r=>{
+    const a = r.abordos||{};
+    if (r.tipo==='solo_ida' || r.tipo?.startsWith('ida_vuelta')) { idaT++; if(a.idaAt) idaD++; }
+    if ((r.tipo==='solo_vuelta' && r.horaVuelta==='1600') || r.tipo==='ida_vuelta_1600') { r16T++; if(a.regreso_1600At) r16D++; }
+    if ((r.tipo==='solo_vuelta' && r.horaVuelta==='1730') || r.tipo==='ida_vuelta_1730') { r17T++; if(a.regreso_1730At) r17D++; }
+  });
+  return { idaT, idaD, r16T, r16D, r17T, r17D };
+}
+
+function renderStats(s){
+  $('#stats').innerHTML = `
+    <div class="stat-pill">Ida: <b>${s.idaD}</b>/<span>${s.idaT}</span></div>
+    <div class="stat-pill">Regreso 4:00: <b>${s.r16D}</b>/<span>${s.r16T}</span></div>
+    <div class="stat-pill">Regreso 5:30: <b>${s.r17D}</b>/<span>${s.r17T}</span></div>
+  `;
+}
+
 function render(){
-  const tabla=$('#tabla'); const list=frows().sort((a,b)=> (a?.creadoEn?.seconds||0)-(b?.creadoEn?.seconds||0));
-  $('#totales').textContent=list.length;
+  const tabla = $('#tabla');
+  const list = frows().sort((a,b)=> (a?.creadoEn?.seconds||0)-(b?.creadoEn?.seconds||0));
+  $('#totales').textContent = list.length;
+  renderStats(stats(list));
+
   if(!list.length){ tabla.innerHTML = `<div class="empty">Sin resultados.</div>`; return; }
+
   let html = `<table class="rwd"><thead><tr>
-    <th>#</th><th>Nombre</th><th>Univ.</th><th>Ruta</th><th>Parada</th><th>Tipo</th><th>Fecha</th><th>Precio</th><th>Teléfono</th><th>Comentario</th><th>Acciones</th>
+    <th>#</th><th>Nombre</th><th>Univ.</th><th>Ruta</th><th>Parada</th><th>Tipo</th><th>Fecha</th><th>Estado</th><th>Precio</th><th>Teléfono</th><th>Comentario</th><th>Acciones</th>
   </tr></thead><tbody>`;
+
   list.forEach((r,i)=>{
+    const a = r.abordos||{};
+    const idaOk = !!a.idaAt, r16Ok = !!a.regreso_1600At, r17Ok = !!a.regreso_1730At;
+    const puedeIda = (r.tipo==='solo_ida'||r.tipo?.startsWith('ida_vuelta'));
+    const puedeR16 = (r.tipo==='solo_vuelta'&&r.horaVuelta==='1600')||r.tipo==='ida_vuelta_1600';
+    const puedeR17 = (r.tipo==='solo_vuelta'&&r.horaVuelta==='1730')||r.tipo==='ida_vuelta_1730';
+
+    const pill = (ok, label) => ok ? `<span class="pill pill-ok">${label} ✓</span>` : `<span class="pill pill-pend">${label}</span>`;
+
+    let acts = `
+      <button class="btn btn-secondary" data-act="edit" data-id="${r._id}">Editar</button>
+      <button class="btn btn-danger" data-act="del" data-id="${r._id}">Eliminar</button>
+    `;
+    // Acciones de validación desde la lista
+    if (puedeIda) acts += ` <button class="btn btn-primary btn-sm" data-act="v_ida" data-id="${r._id}" ${idaOk?'disabled':''}>Validar Ida</button>`;
+    if (puedeR16) acts += ` <button class="btn btn-primary btn-sm" data-act="v_r1600" data-id="${r._id}" ${r16Ok?'disabled':''}>Regreso 4:00</button>`;
+    if (puedeR17) acts += ` <button class="btn btn-primary btn-sm" data-act="v_r1730" data-id="${r._id}" ${r17Ok?'disabled':''}>Regreso 5:30</button>`;
+
+    // Vender regreso rápido (si aplica)
+    if (r.tipo==='solo_ida' || r.tipo?.startsWith('ida_vuelta')) {
+      acts += ` <button class="btn btn-secondary btn-sm" data-act="sell_return" data-id="${r._id}">Vender regreso</button>`;
+    }
+
     html += `<tr>
       <td data-label="#">${i+1}</td>
       <td data-label="Nombre">${esc(r.nombre)}</td>
@@ -234,50 +321,105 @@ function render(){
       <td data-label="Ruta">${r.ruta? `<span class="pill">${r.ruta} · ${esc(RUTAS[r.ruta]?.nombre||'')}</span>`:'-'}</td>
       <td data-label="Parada">${esc(r.parada||'-')}</td>
       <td data-label="Tipo">${esc(tipoTexto(r))}</td>
-      <td data-label="Fecha">${r.fecha}</td>
-      <td data-label="Precio">Q${(r.precio||0).toFixed(2)}</td>
+      <td data-label="Fecha">${esc(r.fecha)}</td>
+      <td data-label="Estado">${[pill(idaOk,'Ida'), pill(r16Ok,'R 4:00'), pill(r17Ok,'R 5:30')].join(' ')}</td>
+      <td data-label="Precio">Q${Number(r.precio||0).toFixed(2)}</td>
       <td data-label="Teléfono">${esc(r.telefono||'')}</td>
       <td data-label="Comentario">${esc(r.comentario||'')}</td>
-      <td data-label="Acciones">
-        <button class="btn btn-secondary" data-act="edit" data-id="${r._id}">Editar</button>
-        <button class="btn btn-danger" data-act="del" data-id="${r._id}">Eliminar</button>
-      </td>
+      <td data-label="Acciones">${acts}</td>
     </tr>`;
   });
+
   html += `</tbody></table>`;
   tabla.innerHTML = html;
 
+  // Delegación de eventos acciones de fila
   tabla.onclick = async (e)=>{
     const b = e.target.closest('button'); if(!b) return;
-    const id = b.dataset.id, act=b.dataset.act;
-    if(act==='del'){ if(confirm('¿Eliminar?')){ try{ await remove(id); }catch(e){toast('No se pudo eliminar')} } }
-    if(act==='edit'){ editRow(id); }
+    const id = b.dataset.id, act = b.dataset.act;
+    const row = rows.find(x=>x._id===id);
+    if(!row) return;
+
+    if (act==='del') {
+      if(confirm('¿Eliminar?')){ try{ await remove(id); }catch{ toast('No se pudo eliminar'); } }
+      return;
+    }
+    if (act==='edit'){
+      const nombre = prompt('Nombre', row.nombre); if(nombre===null) return;
+      try{ await update(id, { nombre }); }catch{ toast('No se pudo actualizar'); }
+      return;
+    }
+
+    const adminEmail = current()?.email || null;
+
+    if (act==='v_ida'){
+      try{ await marcarAbordoIda(id, adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
+      catch{ const q=qRead(); q.push({id, tipo:'ida', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      return;
+    }
+    if (act==='v_r1600'){
+      try{ await marcarAbordoRegreso(id, '1600', adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
+      catch{ const q=qRead(); q.push({id, tipo:'r1600', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      return;
+    }
+    if (act==='v_r1730'){
+      try{ await marcarAbordoRegreso(id, '1730', adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
+      catch{ const q=qRead(); q.push({id, tipo:'r1730', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      return;
+    }
+
+    if (act==='sell_return'){
+      // Vender regreso rápido
+      const hora = prompt('Hora de regreso (1600 o 1730)', '1600');
+      if(hora!=='1600' && hora!=='1730') return toast('Hora inválida');
+      const precioStr = prompt('Precio (Q)', (row.precio||0).toFixed(2));
+      const precio = Number(precioStr||0);
+      const payload = {
+        nombre: row.nombre,
+        universidad: row.universidad,
+        ruta: row.ruta,
+        parada: row.parada,
+        telefono: row.telefono,
+        comentario: (row.comentario||'') + ' · regreso rápido',
+        tipo: 'solo_vuelta',
+        horaVuelta: hora,
+        fecha: row.fecha,
+        jornadaId: row.jornadaId,
+        precio,
+        pagado: false
+      };
+      try{
+        await create(payload);
+        toast('Regreso vendido');
+      }catch{
+        toast('No se pudo vender regreso');
+      }
+    }
   };
 }
 
-function editRow(id){
-  const r = rows.find(x=>x._id===id); if(!r) return;
-  const nombre = prompt('Nombre', r.nombre); if(nombre===null) return;
-  try{ update(id, { nombre }); } catch{ toast('No se pudo actualizar'); }
-}
-
+// ------- util: Export CSV / WhatsApp (igual que ya tenías) -------
 function exportCSV(){
-  const list=frows();
+  const list = frows();
   if(!list.length) return toast('Sin datos');
-  const head=['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Precio','Telefono','Comentario'];
+  const head=['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Estado_Ida','Estado_R1600','Estado_R1730','Precio','Telefono','Comentario'];
   const lines=[head.join(',')];
   list.forEach((r,i)=>{
+    const a=r.abordos||{};
     const rutaTxt=r.ruta?`${r.ruta} ${RUTAS[r.ruta]?.nombre||''}`:'—';
-    lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,`Q${(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
+    const sIda = a.idaAt?'OK':'Pend';
+    const s16 = a.regreso_1600At?'OK':'Pend';
+    const s17 = a.regreso_1730At?'OK':'Pend';
+    lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,sIda,s16,s17,`Q${Number(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
   });
-  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); 
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 
 function sendWA(){
   const list=frows(); if(!list.length) return toast('Sin datos');
-  const totalQ=list.reduce((a,r)=>a+(r.precio||0),0);
+  const totalQ=list.reduce((a,r)=>a+(Number(r.precio)||0),0);
   let t=`*Lista UniBus*%0AFecha: ${sabadoVigente()}%0ATotal: Q${totalQ.toFixed(2)}%0A%0A`;
-  list.forEach((x,i)=>{ t+=`${i+1}. ${encodeURIComponent(x.nombre||'')} — ${encodeURIComponent(tipoTexto(x))} — Q${(x.precio||0).toFixed(2)}%0A`; });
+  list.forEach((x,i)=>{ t+=`${i+1}. ${encodeURIComponent(x.nombre||'')} — ${encodeURIComponent(tipoTexto(x))} — Q${Number(x.precio||0).toFixed(2)}%0A`; });
   window.open(`https://wa.me/?text=${t}`,'_blank');
 }
