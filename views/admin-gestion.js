@@ -44,44 +44,64 @@ export function AdminGestionView(){
     <div id="tabla"></div>
   </section>`;
 
-  // Escaneo QR (mejorado)
+// Escaneo QR (robusto con multi-CDN)
 $('#btnScanQR').onclick = async () => {
   $('#qrScanPanel').style.display = 'block';
   $('#qr-result').textContent = 'Inicializando cámara…';
 
-  // 1) Cargar html5-qrcode si hace falta
-  async function ensureHtml5Qrcode() {
-    if (window.Html5Qrcode) return;
-    await new Promise((resolve, reject) => {
+  // ===== Carga robusta de la librería =====
+  function loadScript(src, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar html5-qrcode'));
-      document.body.appendChild(s);
+      let done = false;
+      const t = setTimeout(() => {
+        if (!done) { done = true; s.remove(); reject(new Error('timeout')); }
+      }, timeoutMs);
+      s.src = src;
+      s.async = true;
+      s.onload = () => { if (!done) { done = true; clearTimeout(t); resolve(); } };
+      s.onerror = () => { if (!done) { done = true; clearTimeout(t); reject(new Error('network')); } };
+      document.head.appendChild(s);
     });
   }
 
-  // 2) Mensajes claros
+  async function ensureHtml5Qrcode() {
+    if (window.Html5Qrcode) return;
+    const cdns = [
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/minified/html5-qrcode.min.js',
+      'https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.10/html5-qrcode.min.js'
+    ];
+    let lastErr;
+    for (const url of cdns) {
+      try { await loadScript(url, 8000); if (window.Html5Qrcode) return; } catch (e) { lastErr = e; }
+    }
+    throw new Error('No se pudo cargar html5-qrcode');
+  }
+
+  // ===== Mapeo de errores legibles =====
   function mapErr(e) {
     const m = (e && e.message) ? e.message : String(e || '');
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost')
+    if (m.includes('No se pudo cargar html5-qrcode')) return m;
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost'))
       return 'Abre el sitio en HTTPS o en http://localhost para usar la cámara.';
     if (/Permission|NotAllowedError/i.test(m)) return 'Permiso de cámara denegado.';
     if (/NotFoundError|no camera|no cameras/i.test(m)) return 'No hay cámaras disponibles.';
     if (/InUse|NotReadable|TrackStart/i.test(m)) return 'La cámara está en uso por otra app.';
+    if (/timeout/i.test(m)) return 'Tiempo de espera al cargar la librería.';
     return 'No se pudo iniciar la cámara: ' + m;
   }
 
   try {
     await ensureHtml5Qrcode();
 
-    // 3) Elegir cámara (trasera si existe)
+    // Elegir cámara (trasera si existe)
     const devices = await Html5Qrcode.getCameras();
     if (!devices?.length) { $('#qr-result').textContent = 'No se encontró cámara.'; return; }
     const back = devices.find(d => /back|rear|environment|trasera|atrás/i.test(d.label)) || devices[0];
 
     const qrReader = new Html5Qrcode('qr-reader', {
-      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+      formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ]
     });
 
     await qrReader.start(
@@ -98,10 +118,9 @@ $('#btnScanQR').onclick = async () => {
 
         try {
           const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-          // OJO: desde /views/ la ruta correcta es ../firebase.js
+          // Desde /views/, la ruta a firebase es una arriba
           const { db } = await import('../firebase.js');
           const snap = await getDoc(doc(db, 'reservas', id));
-
           if (snap.exists()) {
             const r = snap.data();
             $('#qr-result').innerHTML = `
@@ -113,12 +132,11 @@ $('#btnScanQR').onclick = async () => {
               Tipo: ${r.tipo}<br>
               Fecha: ${r.fecha}
             `;
-            // Ejemplo opcional: marcar abordo/pagado aquí
-            // import('../reservas.js').then(({ updateReserva }) => updateReserva(id, { abordo: true }));
           } else {
             $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
           }
         } catch (e) {
+          console.error(e);
           $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
         } finally {
           try { await qrReader.stop(); await qrReader.clear(); } catch {}
@@ -126,17 +144,16 @@ $('#btnScanQR').onclick = async () => {
       }
     );
 
-    // 4) Cerrar
     $('#btnCloseQR').onclick = async () => {
       $('#qrScanPanel').style.display = 'none';
       try { await qrReader.stop(); await qrReader.clear(); } catch {}
     };
 
   } catch (e) {
+    console.error(e);
     $('#qr-result').textContent = mapErr(e);
   }
 };
-
 
   const sab = sabadoVigente();
   if(typeof stop==='function') stop();
