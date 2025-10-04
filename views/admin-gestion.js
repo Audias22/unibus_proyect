@@ -175,19 +175,30 @@ export function AdminGestionView(){
   };
 
   // ========= Datos & tabla =========
-  const sab = sabadoVigente();
-  if (typeof stop === 'function') stop();
-  stop = listenByJornada(sab, snap=>{
-    rows = snap.docs.map(d=>({ _id: d.id, ...d.data() }));
-    render();
-    qFlush();
-  });
+  let stop = null;
+  let rows = [];
+
+  function cargarPorFecha(fecha) {
+    if (typeof stop === 'function') stop();
+    stop = listenByJornada(fecha, snap => {
+      rows = (snap?.docs || []).map(d => ({ _id: d.id, ...d.data?.() }));
+      render();
+      if (typeof qFlush === 'function') qFlush();
+    });
+  }
+
+  // Inicial carga con el sábado vigente
+  cargarPorFecha($('#f_fecha').value);
+
+  // Actualizar al cambiar la fecha
+  $('#f_fecha').onchange = () => {
+    cargarPorFecha($('#f_fecha').value);
+  };
 
   $('#f_tipo').oninput   = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta') ? 'block' : 'none'; render(); };
   $('#f_hora').oninput   = render;
   $('#f_ruta').oninput   = render;
   $('#f_q').oninput      = render;
-  $('#f_fecha').onchange = ()=>{ render(); };
   $('#btnCSV').onclick   = exportCSV;
   $('#btnWA').onclick    = sendWA;
 }
