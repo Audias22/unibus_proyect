@@ -360,18 +360,40 @@ function render(){
     const adminEmail = current()?.email || null;
 
     if (act==='v_ida'){
-      try{ await marcarAbordoIda(id, adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
-      catch{ const q=qRead(); q.push({id, tipo:'ida', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      try{
+        await marcarAbordoIda(id, adminEmail);
+        playOk();
+        b.disabled=true; b.textContent='Registrado ✓';
+        // actualizar localmente para reflejar el cambio en los contadores
+        const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.idaAt = rr.abordos.idaAt || true; }
+        render();
+      }
+      catch{
+        const q=qRead(); q.push({id, tipo:'ida', ts:Date.now()}); qWrite(q);
+        playOk(); b.disabled=true; b.textContent='Pendiente ✓';
+        const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.idaAt = rr.abordos.idaAt || true; }
+        render();
+      }
       return;
     }
     if (act==='v_r1600'){
-      try{ await marcarAbordoRegreso(id, '1600', adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
-      catch{ const q=qRead(); q.push({id, tipo:'r1600', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      try{
+        await marcarAbordoRegreso(id, '1600', adminEmail);
+        playOk(); b.disabled=true; b.textContent='Registrado ✓';
+        const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.regreso_1600At = rr.abordos.regreso_1600At || true; }
+        render();
+      }
+      catch{ const q=qRead(); q.push({id, tipo:'r1600', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.regreso_1600At = rr.abordos.regreso_1600At || true; } render(); }
       return;
     }
     if (act==='v_r1730'){
-      try{ await marcarAbordoRegreso(id, '1730', adminEmail); playOk(); b.disabled=true; b.textContent='Registrado ✓'; }
-      catch{ const q=qRead(); q.push({id, tipo:'r1730', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; }
+      try{
+        await marcarAbordoRegreso(id, '1730', adminEmail);
+        playOk(); b.disabled=true; b.textContent='Registrado ✓';
+        const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.regreso_1730At = rr.abordos.regreso_1730At || true; }
+        render();
+      }
+      catch{ const q=qRead(); q.push({id, tipo:'r1730', ts:Date.now()}); qWrite(q); playOk(); b.disabled=true; b.textContent='Pendiente ✓'; const rr = rows.find(x=>x._id===id); if(rr){ rr.abordos = rr.abordos || {}; rr.abordos.regreso_1730At = rr.abordos.regreso_1730At || true; } render(); }
       return;
     }
 
