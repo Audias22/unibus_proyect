@@ -11,6 +11,17 @@ import { login, logout, watchAuth, current } from "./auth.js";
 $('#capacidadLbl').textContent = CAPACIDAD;
 $('#chipSabado').textContent = `Sábado: ${sabadoVigente()}`;
 
+// Evitar zoom por pinch/double-tap en móviles para mantener layout estable
+try{
+  document.body.classList.add('no-zoom','prevent-pinch');
+  let lastTouch = 0;
+  document.addEventListener('touchstart', function(e){
+    if (e.touches.length > 1) e.preventDefault();
+    const t = Date.now(); if (t - lastTouch <= 300) e.preventDefault(); lastTouch = t;
+  }, { passive: false });
+  document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+}catch(e){}
+
 const nav = $('#nav');
 function paintNav(){
   const user = current();
