@@ -175,8 +175,7 @@ export function AdminGestionView(){
   };
 
   // ========= Datos & tabla =========
-  let stop = null;
-  let rows = [];
+  // usar las variables `stop` y `rows` definidas en el scope superior
 
   function cargarPorFecha(fecha) {
     if (typeof stop === 'function') stop();
