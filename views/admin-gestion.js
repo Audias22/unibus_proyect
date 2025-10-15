@@ -501,6 +501,7 @@ async function exportXLSX(){
   const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
   const fmt = v => (v===undefined||v===null)?'':String(v);
 
+  // construir datos para hoja "Reservas" (omitimos Fecha, Comentario y columnas de Estado)
   const data = list.map((r,i)=>({
     '#': i+1,
     Nombre: stripHtml(fmt(r.nombre)),
@@ -508,43 +509,67 @@ async function exportXLSX(){
     Ruta: r.ruta ? `${r.ruta} — ${stripHtml(RUTAS[r.ruta]?.nombre||'')}` : '—',
     Parada: stripHtml(fmt(r.parada||'')),
     Tipo: stripHtml(fmt(tipoTexto(r))),
-    Fecha: stripHtml(fmt(r.fecha)),
-    Estado_Ida: (r.abordos && r.abordos.idaAt) ? 'OK' : 'Pend',
-    Estado_R1600: (r.abordos && r.abordos.regreso_1600At) ? 'OK' : 'Pend',
-    Estado_R1730: (r.abordos && r.abordos.regreso_1730At) ? 'OK' : 'Pend',
     Precio: Number(r.precio||0),
     Telefono: stripHtml(fmt(r.telefono||'')),
-    Comentario: stripHtml(fmt(r.comentario||'')),
     Pagado: !!r.pagado
   }));
 
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data, {header: ['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Estado_Ida','Estado_R1600','Estado_R1730','Precio','Telefono','Comentario','Pagado']});
+  const ws = XLSX.utils.json_to_sheet(data, {header: ['#','Nombre','Universidad','Ruta','Parada','Tipo','Precio','Telefono','Pagado']});
 
-  // aplicar estilos simples al header (SheetJS soporta 's' en workbook modernamente)
+  // Estilos para encabezado
   const headerRange = XLSX.utils.decode_range(ws['!ref']);
   for(let C = headerRange.s.c; C <= headerRange.e.c; ++C){
     const cellAddress = XLSX.utils.encode_cell({r:0,c:C});
     if(!ws[cellAddress]) continue;
     ws[cellAddress].s = ws[cellAddress].s || {};
-    ws[cellAddress].s.font = Object.assign({}, ws[cellAddress].s.font, { bold: true, color: { rgb: 'FFFFFFFF' } });
-    ws[cellAddress].s.fill = { fgColor: { rgb: '264653' } };
+    ws[cellAddress].s.font = { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11 };
+    ws[cellAddress].s.fill = { fgColor: { rgb: '263248' } };
     ws[cellAddress].s.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
   }
 
-  // ancho de columnas
-  ws['!cols'] = [ {wpx:30}, {wpx:200}, {wpx:180}, {wpx:220}, {wpx:140}, {wpx:140}, {wpx:90}, {wpx:80}, {wpx:90}, {wpx:90}, {wpx:80}, {wpx:110}, {wpx:240}, {wpx:60} ];
+  // Anchos de columna más adecuados
+  ws['!cols'] = [ {wpx:30}, {wpx:220}, {wpx:180}, {wpx:220}, {wpx:140}, {wpx:140}, {wpx:80}, {wpx:120}, {wpx:60} ];
 
-  // formato precio y wrap en comentario
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  for(let R = 1; R <= range.e.r; ++R){
-    const priceCell = XLSX.utils.encode_cell({r:R, c:10}); // Precio column index 10 (0-based)
+  // Formato numérico para precio y boolean para pagado
+  const rng = XLSX.utils.decode_range(ws['!ref']);
+  for(let R = 1; R <= rng.e.r; ++R){
+    const priceCell = XLSX.utils.encode_cell({r:R, c:6}); // Precio
     if(ws[priceCell]){ ws[priceCell].t = 'n'; ws[priceCell].z = '0.00'; }
-    const commentCell = XLSX.utils.encode_cell({r:R, c:12}); if(ws[commentCell]){ ws[commentCell].s = ws[commentCell].s || {}; ws[commentCell].s.alignment = { wrapText: true, vertical: 'top' }; }
-    const pagCell = XLSX.utils.encode_cell({r:R, c:13}); if(ws[pagCell]){ ws[pagCell].t = 'b'; }
+    const pagCell = XLSX.utils.encode_cell({r:R, c:8}); if(ws[pagCell]){ ws[pagCell].t = 'b'; }
   }
 
+  // Hoja de cierre: resumen formal
+  const totalCount = list.length;
+  const totalPrecio = list.reduce((a,r)=>a+(Number(r.precio||0)),0);
+  const totalPagado = list.reduce((a,r)=>a + ((r.pagado)?Number(r.precio||0):0),0);
+  const paidCount = list.filter(r=>r.pagado).length;
+  const pendingCount = totalCount - paidCount;
+
+  const cierre = [
+    ['Cierre de caja'],
+    ['Fecha', $('#f_fecha').value || new Date().toISOString().slice(0,10)],
+    [],
+    ['Total registros', totalCount],
+    ['Total pagado (Q)', totalPagado.toFixed(2)],
+    ['Total pendiente (Q)', (totalPrecio - totalPagado).toFixed(2)],
+    ['Total recaudado (Q)', totalPagado.toFixed(2)],
+    [],
+    ['Pagados', paidCount],
+    ['Pendientes', pendingCount]
+  ];
+  const wsC = XLSX.utils.aoa_to_sheet(cierre);
+  // merge A1 across columns for title
+  wsC['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:3}}];
+  // style title
+  if(wsC['A1']) wsC['A1'].s = { font:{ sz:14, bold:true, color:{rgb:'FFFFFFFF'} }, fill:{ fgColor:{rgb:'1f4b6e'} }, alignment:{ horizontal:'center', vertical:'center' } };
+  // style labels
+  for(let r=3;r<=6;r++){ const cell = XLSX.utils.encode_cell({r:r,c:0}); if(wsC[cell]) wsC[cell].s = { font:{ bold:true } }; }
+  wsC['!cols'] = [{wpx:160},{wpx:120},{wpx:60},{wpx:60}];
+
   XLSX.utils.book_append_sheet(wb, ws, 'Reservas');
+  XLSX.utils.book_append_sheet(wb, wsC, 'Cierre de caja');
+
   const fecha = $('#f_fecha').value || new Date().toISOString().slice(0,10);
   XLSX.writeFile(wb, `unibus_${fecha}.xlsx`);
 }
