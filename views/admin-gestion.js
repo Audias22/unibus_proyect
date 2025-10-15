@@ -199,7 +199,8 @@ export function AdminGestionView(){
   $('#f_ruta').oninput   = render;
   $('#f_q').oninput      = render;
   $('#btnCSV').onclick   = exportCSV;
-  $('#btnWA').onclick    = sendWA;
+  // Ocultamos la opción WhatsApp porque no se usará/permitirá mejoras ahora
+  try{ $('#btnWA').style.display = 'none'; }catch(e){}
 }
 
 // ------- UI de detalle (para QR) -------
@@ -431,18 +432,59 @@ function render(){
 function exportCSV(){
   const list = frows();
   if(!list.length) return toast('Sin datos');
-  const head=['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Estado_Ida','Estado_R1600','Estado_R1730','Precio','Telefono','Comentario'];
-  const lines=[head.join(',')];
+
+  // utilidades
+  const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  const fmt = v => (v===undefined||v===null)?'':String(v);
+
+  const head = ['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Estado_Ida','Estado_R1600','Estado_R1730','Precio','Telefono','Comentario'];
+  const rowsOut = [];
+  // agregar encabezado escapado
+  rowsOut.push(head.map(csvVal).join(','));
+
+  let totalPrecio = 0;
+  let totalPagado = 0;
+
   list.forEach((r,i)=>{
-    const a=r.abordos||{};
-    const rutaTxt=r.ruta?`${r.ruta} ${RUTAS[r.ruta]?.nombre||''}`:'—';
-    const sIda = a.idaAt?'OK':'Pend';
-    const s16 = a.regreso_1600At?'OK':'Pend';
-    const s17 = a.regreso_1730At?'OK':'Pend';
-    lines.push([i+1,r.nombre,r.universidad,rutaTxt,r.parada||'',tipoTexto(r),r.fecha,sIda,s16,s17,`Q${Number(r.precio||0).toFixed(2)}`,r.telefono||'',(r.comentario||'').replace(/[\r\n,]/g,' ')].map(csvVal).join(','));
+    const a = r.abordos||{};
+    const rutaTxt = r.ruta ? `${r.ruta} ${stripHtml(RUTAS[r.ruta]?.nombre||'')}` : '—';
+    const sIda = a.idaAt ? 'OK' : 'Pend';
+    const s16 = a.regreso_1600At ? 'OK' : 'Pend';
+    const s17 = a.regreso_1730At ? 'OK' : 'Pend';
+    const precio = Number(r.precio||0);
+    totalPrecio += precio;
+    if (r.pagado) totalPagado += precio;
+
+    const cols = [
+      i+1,
+      stripHtml(fmt(r.nombre)),
+      stripHtml(fmt(r.universidad)),
+      stripHtml(rutaTxt),
+      stripHtml(fmt(r.parada||'')),
+      stripHtml(fmt(tipoTexto(r))),
+      stripHtml(fmt(r.fecha)),
+      sIda, s16, s17,
+      precio.toFixed(2),
+      stripHtml(fmt(r.telefono||'')),
+      stripHtml(fmt(r.comentario||''))
+    ];
+    rowsOut.push(cols.map(csvVal).join(','));
   });
-  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'}); 
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`unibus_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+
+  // totales al final
+  rowsOut.push('');
+  rowsOut.push([ '','', '', '', '', '', '','Total Pagado:', '', '', totalPagado.toFixed(2), '', '' ].map(csvVal).join(','));
+  rowsOut.push([ '','', '', '', '', '', '','Total (todos):', '', '', totalPrecio.toFixed(2), '', '' ].map(csvVal).join(','));
+
+  // CSV con BOM y CRLF para abrir bien en Excel
+  const csvContent = '\uFEFF' + rowsOut.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const fecha = $('#f_fecha').value || new Date().toISOString().slice(0,10);
+  a.download = `unibus_${fecha}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function sendWA(){
