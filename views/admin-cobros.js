@@ -4,21 +4,34 @@ import { listenByJornada, setPagado } from "../src/reservas.js";
 let stop = null, data = [];
 
 export function AdminCobrosView(){
+  const sab = sabadoVigente();
   $('#app').innerHTML = `
   <section class="card">
     <div class="row" style="gap:16px">
-      <h2 style="margin:0">Cobros de este sábado</h2>
+      <h2 style="margin:0">Cobros por jornada</h2>
       <span class="badge" id="resumen">—</span>
-      <span class="right muted">Sábado: <b>${sabadoVigente()}</b></span>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <label class="muted" style="margin:0 8px 0 0">Sábado:</label>
+        <input type="date" id="f_fechaCobros" value="${sab}">
+      </div>
     </div>
     <div id="lista"></div>
   </section>`;
 
-  if (typeof stop === 'function') stop();
-  stop = listenByJornada(sabadoVigente(), snap=>{
-    data = snap.docs.map(d=> ({ _id:d.id, ...d.data() }));
-    render();
-  }, err=>{ console.error(err); toast('Error de lectura'); });
+  // iniciar listener sobre la jornada seleccionada
+  const fechaInput = $('#f_fechaCobros');
+  function startListener(jornada){
+    if (typeof stop === 'function') stop();
+    stop = listenByJornada(jornada, snap=>{
+      console.debug('[listenByJornada] jornada=', jornada, 'docs=', snap.size);
+      try{ console.debug(snap.docs.slice(0,5).map(d=>({ id:d.id, ...d.data() }))); }catch(e){ console.debug('No se pudo leer datos de snap:', e); }
+      data = snap.docs.map(d=> ({ _id:d.id, ...d.data() }));
+      render();
+    }, err=>{ console.error(err); toast('Error de lectura'); });
+  }
+
+  startListener(fechaInput.value);
+  fechaInput.onchange = ()=> startListener(fechaInput.value);
 }
 
 function render(){
