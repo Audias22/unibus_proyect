@@ -76,7 +76,7 @@ export function AdminGestionView(){
         <div><label>Buscar</label><input id="f_q" placeholder="Nombre/Univ/Parada…"></div>
       </div>
       <div class="row">
-        <button class="btn btn-secondary" id="btnCSV">Exportar CSV</button>
+  <button class="btn btn-secondary" id="btnXLSX">Exportar Excel</button>
         <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
         <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
         <span class="right muted">Total: <b id="totales">0</b></span>
@@ -198,7 +198,7 @@ export function AdminGestionView(){
   $('#f_hora').oninput   = render;
   $('#f_ruta').oninput   = render;
   $('#f_q').oninput      = render;
-  $('#btnCSV').onclick   = exportCSV;
+  $('#btnXLSX').onclick   = exportXLSX;
   // Ocultamos la opción WhatsApp porque no se usará/permitirá mejoras ahora
   try{ $('#btnWA').style.display = 'none'; }catch(e){}
 }
@@ -485,6 +485,68 @@ function exportCSV(){
   a.download = `unibus_${fecha}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+async function exportXLSX(){
+  const list = frows(); if(!list.length) return toast('Sin datos');
+
+  // cargar SheetJS si es necesario
+  if(!window.XLSX){
+    await new Promise((resolve,reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js';
+      s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+    }).catch(e=>{ console.error('No se pudo cargar xlsx:',e); toast('Error cargando librería XLSX'); });
+  }
+  const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  const fmt = v => (v===undefined||v===null)?'':String(v);
+
+  const data = list.map((r,i)=>({
+    '#': i+1,
+    Nombre: stripHtml(fmt(r.nombre)),
+    Universidad: stripHtml(fmt(r.universidad)),
+    Ruta: r.ruta ? `${r.ruta} — ${stripHtml(RUTAS[r.ruta]?.nombre||'')}` : '—',
+    Parada: stripHtml(fmt(r.parada||'')),
+    Tipo: stripHtml(fmt(tipoTexto(r))),
+    Fecha: stripHtml(fmt(r.fecha)),
+    Estado_Ida: (r.abordos && r.abordos.idaAt) ? 'OK' : 'Pend',
+    Estado_R1600: (r.abordos && r.abordos.regreso_1600At) ? 'OK' : 'Pend',
+    Estado_R1730: (r.abordos && r.abordos.regreso_1730At) ? 'OK' : 'Pend',
+    Precio: Number(r.precio||0),
+    Telefono: stripHtml(fmt(r.telefono||'')),
+    Comentario: stripHtml(fmt(r.comentario||'')),
+    Pagado: !!r.pagado
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data, {header: ['#','Nombre','Universidad','Ruta','Parada','Tipo','Fecha','Estado_Ida','Estado_R1600','Estado_R1730','Precio','Telefono','Comentario','Pagado']});
+
+  // aplicar estilos simples al header (SheetJS soporta 's' en workbook modernamente)
+  const headerRange = XLSX.utils.decode_range(ws['!ref']);
+  for(let C = headerRange.s.c; C <= headerRange.e.c; ++C){
+    const cellAddress = XLSX.utils.encode_cell({r:0,c:C});
+    if(!ws[cellAddress]) continue;
+    ws[cellAddress].s = ws[cellAddress].s || {};
+    ws[cellAddress].s.font = Object.assign({}, ws[cellAddress].s.font, { bold: true, color: { rgb: 'FFFFFFFF' } });
+    ws[cellAddress].s.fill = { fgColor: { rgb: '264653' } };
+    ws[cellAddress].s.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
+  }
+
+  // ancho de columnas
+  ws['!cols'] = [ {wpx:30}, {wpx:200}, {wpx:180}, {wpx:220}, {wpx:140}, {wpx:140}, {wpx:90}, {wpx:80}, {wpx:90}, {wpx:90}, {wpx:80}, {wpx:110}, {wpx:240}, {wpx:60} ];
+
+  // formato precio y wrap en comentario
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for(let R = 1; R <= range.e.r; ++R){
+    const priceCell = XLSX.utils.encode_cell({r:R, c:10}); // Precio column index 10 (0-based)
+    if(ws[priceCell]){ ws[priceCell].t = 'n'; ws[priceCell].z = '0.00'; }
+    const commentCell = XLSX.utils.encode_cell({r:R, c:12}); if(ws[commentCell]){ ws[commentCell].s = ws[commentCell].s || {}; ws[commentCell].s.alignment = { wrapText: true, vertical: 'top' }; }
+    const pagCell = XLSX.utils.encode_cell({r:R, c:13}); if(ws[pagCell]){ ws[pagCell].t = 'b'; }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Reservas');
+  const fecha = $('#f_fecha').value || new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `unibus_${fecha}.xlsx`);
 }
 
 function sendWA(){
