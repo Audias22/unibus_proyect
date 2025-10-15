@@ -101,6 +101,8 @@ export function AdminGestionView(){
   // ========= Escaneo QR =========
   $('#btnScanQR').onclick = async () => {
     $('#qrScanPanel').style.display = 'block';
+    // asegurar que el panel esté visible en pantalla (móviles)
+    setTimeout(()=>{ document.getElementById('qrScanPanel').scrollIntoView({behavior:'smooth', block:'center'}); }, 80);
     $('#qr-result').textContent = 'Inicializando cámara…';
 
     if (!window.Html5Qrcode) {
@@ -127,34 +129,41 @@ export function AdminGestionView(){
 
       qrReader = new Html5Qrcode('qr-reader', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
 
+      let scanLock = false;
       const onSuccess = async (decodedText) => {
-        if (!decodedText.startsWith('UNIBUS|')) {
-          playErr();
-          $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
-          return;
-        }
-        const id = decodedText.split('|')[1];
-        $('#qr-result').textContent = 'Buscando reserva…';
-
-        try {
-          const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-          const { db } = await import('../src/firebase.js');
-          const snap = await getDoc(doc(db, 'reservas', id));
-          if (!snap.exists()) {
+        if(scanLock) return; // evitar multi-callbacks rápidos
+        scanLock = true;
+        $('#qr-result').textContent = 'Escaneado: ' + decodedText;
+        // mostrar el resultado brevemente para que el admin vea lo que pasó
+        setTimeout(async ()=>{
+          if (!decodedText.startsWith('UNIBUS|')) {
             playErr();
-            $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
-            return;
+            $('#qr-result').innerHTML = '<span style="color:#f00">QR inválido</span>';
+            scanLock = false; return;
           }
-          const r = snap.data();
-          await renderReservaParaValidar(snap.id, r, '#qr-result');
-          playOk();
-        } catch (e) {
-          console.error(e);
-          playErr();
-          $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
-        } finally {
-          try { await qrReader.stop(); await qrReader.clear(); } catch {}
-        }
+          const id = decodedText.split('|')[1];
+          $('#qr-result').textContent = 'Buscando reserva…';
+          try {
+            const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+            const { db } = await import('../src/firebase.js');
+            const snap = await getDoc(doc(db, 'reservas', id));
+            if (!snap.exists()) {
+              playErr();
+              $('#qr-result').innerHTML = '<span style="color:#f00">Reserva no encontrada</span>';
+              scanLock = false; return;
+            }
+            const r = snap.data();
+            await renderReservaParaValidar(snap.id, r, '#qr-result');
+            playOk();
+          } catch (e) {
+            console.error(e);
+            playErr();
+            $('#qr-result').innerHTML = '<span style="color:#f00">Error al buscar reserva</span>';
+          } finally {
+            try { await qrReader.stop(); await qrReader.clear(); } catch {}
+            scanLock = false;
+          }
+        }, 700); // pausa breve para que el admin vea el contenido del QR antes de procesar
       };
 
       await qrReader.start(
