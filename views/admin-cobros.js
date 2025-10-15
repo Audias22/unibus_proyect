@@ -37,9 +37,12 @@ function render(){
       <td data-label="Nombre">${esc(r.nombre)}</td>
       <td data-label="Tipo/Hora">${esc(tipoTexto(r))}</td>
       <td data-label="Precio">Q${(r.precio||0).toFixed(2)}</td>
-      <td data-label="Pagado"><label style="display:flex;gap:8px;align-items:center">
-        <input type="checkbox" data-id="${r._id}" ${r.pagado?'checked':''}><span>${r.pagado?'Sí':'No'}</span>
-      </label></td>
+      <td data-label="Pagado">
+        <label class="pagado-control">
+          <input type="checkbox" data-id="${r._id}" ${r.pagado?'checked':''}>
+          <span class="pagado-badge ${r.pagado? 'pill pill-ok pagado-yes' : 'pill pagado-no'}">${r.pagado? 'Sí' : 'No'}</span>
+        </label>
+      </td>
     </tr>`;
   });
   html += `</tbody></table>`;

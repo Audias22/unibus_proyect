@@ -33,6 +33,21 @@ textarea{min-height:70px;resize:vertical}
 .nav a.active{background:#172033;border-color:#2b3a52}
 .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111827;border:1px solid #374151;padding:10px 14px;border-radius:10px;display:none}
 .empty{padding:18px;text-align:center;color:var(--muted)}
+/* Estilos para control Pagado */
+.pagado-control{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.pagado-control input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:18px;height:18px;border-radius:4px;border:1px solid var(--line);background:transparent;display:inline-grid;place-items:center}
+.pagado-control input[type="checkbox"]:checked{background:var(--accent);border-color:var(--accent)}
+.pagado-control input[type="checkbox"]:focus{outline:2px solid rgba(37,99,235,0.25);outline-offset:3px}
+.pagado-badge{padding:6px 10px;border-radius:999px;font-weight:700;font-size:0.95rem}
+.pagado-no{background:#111827;color:var(--muted);border:1px solid var(--line)}
+.pagado-yes{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+
+/* Hacer el badge grande en pantallas pequeñas para mejor tap target */
+@media(max-width:880px){
+  .pagado-badge{font-size:1rem;padding:10px 12px}
+  .pagado-control input[type="checkbox"]{width:20px;height:20px}
+  table.rwd td[data-label="Pagado"]{display:flex;align-items:center;justify-content:flex-start;gap:8px}
+}
 /* tabla->tarjetas */
 table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-top:1px solid var(--line);padding:10px;vertical-align:top}
 th{color:var(--muted);text-align:left}
