@@ -67,20 +67,40 @@ export function AdminDashboardView(){
         toast('Error leyendo estudiantes (fallback)');
         const errEl = document.getElementById('studError');
         if(errEl){
-          errEl.innerHTML = `<div class="card"><div style="color:#900">Error leyendo estudiantes (fallback). Revisa la consola.</div><div style="margin-top:8px"><button id="btnRetryStudents" class="btn btn-secondary">Reintentar lectura</button></div></div>`;
-          document.getElementById('btnRetryStudents').onclick = async ()=>{
-            errEl.innerHTML = 'Leyendo...';
-            try{
-              const { getDocs, query, orderBy, collection } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
-              const { db } = await import('../src/firebase.js');
-              const q = query(collection(db, 'students'), orderBy('nombre','asc'));
-              const s2 = await getDocs(q);
-              cached = (s2.docs||[]).map(d=>({ id:d.id, ...d.data() }));
+          // detectar permiso denegado
+          const isPerm = (e2 && (e2.code==='permission-denied' || /permission/i.test(String(e2.message||''))));
+          if(isPerm){
+            errEl.innerHTML = `<div class="card"><div style="color:#900">Permisos insuficientes para leer la colección <b>students</b>. Revisa las reglas de Firestore o la cuenta con la que estás autenticado.</div>
+              <ul style="margin-top:8px"><li>En la consola de Firebase → Firestore → Rules revisa que las lecturas estén permitidas para tu usuario.</li>
+              <li>Para desarrollo puedes usar reglas abiertas (temporales): <code>allow read, write: if true;</code></li></ul>
+              <div style="margin-top:8px"><button id="btnLoadExample" class="btn btn-secondary">Cargar ejemplo local</button></div></div>`;
+            document.getElementById('btnLoadExample').onclick = ()=>{
+              // Datos de ejemplo (no escriben en Firestore)
+              cached = [
+                { id:'ex-1', nombre:'Alumno Ejemplo 1', universidad:'UMG Zacapa', horario:'16:00', telefono:'+502 5000 0001', preferredBus:'A' },
+                { id:'ex-2', nombre:'Alumno Ejemplo 2', universidad:'USAC Zacapa', horario:'18:00', telefono:'+502 5000 0002', preferredBus:'B' }
+              ];
               render();
               errEl.innerHTML = '';
-              toast('Lectura completada');
-            }catch(e3){ console.error('retry error', e3); errEl.innerHTML = '<div style="color:#900">Reintentar falló. Ver consola.</div>'; }
-          };
+              toast('Datos de ejemplo cargados (local)');
+            };
+          } else {
+            errEl.innerHTML = `<div class="card"><div style="color:#900">Error leyendo estudiantes (fallback). Revisa la consola.</div><div style="margin-top:8px"><button id="btnRetryStudents" class="btn btn-secondary">Reintentar lectura</button> <button id="btnLoadExample2" class="btn btn-secondary">Cargar ejemplo local</button></div></div>`;
+            document.getElementById('btnRetryStudents').onclick = async ()=>{
+              errEl.innerHTML = 'Leyendo...';
+              try{
+                const { getDocs, query, orderBy, collection } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+                const { db } = await import('../src/firebase.js');
+                const q = query(collection(db, 'students'), orderBy('nombre','asc'));
+                const s2 = await getDocs(q);
+                cached = (s2.docs||[]).map(d=>({ id:d.id, ...d.data() }));
+                render();
+                errEl.innerHTML = '';
+                toast('Lectura completada');
+              }catch(e3){ console.error('retry error', e3); errEl.innerHTML = '<div style="color:#900">Reintentar falló. Ver consola.</div>'; }
+            };
+            document.getElementById('btnLoadExample2').onclick = ()=>{ cached = [ { id:'ex-1', nombre:'Alumno Ejemplo 1', universidad:'UMG Zacapa', horario:'16:00', telefono:'+502 5000 0001', preferredBus:'A' } ]; render(); errEl.innerHTML=''; toast('Ejemplo local cargado'); };
+          }
         }
       }
     })();

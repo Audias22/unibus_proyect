@@ -600,7 +600,20 @@ async function exportXLSX(){
       students = (snap.docs||[]).map(d=> ({ id: d.id, ...d.data() }));
       if(!students.length) { console.debug('startStudentRoster: no students'); }
       renderRoster(jornadaId);
-    }, err=>{ console.error('students listen error', err); toast('Error leyendo estudiantes'); });
+    }, err=>{
+      console.error('students listen error', err);
+      toast('Error leyendo estudiantes');
+      // UI: mostrar botón para cargar ejemplo local en la tabla
+      const $root = $('#tabla');
+      if($root){
+        $root.innerHTML = `<div class="card"><div style="color:#900">Permisos insuficientes para leer 'students'.</div><div style="margin-top:8px"><button id="btnLoadExampleRoster" class="btn btn-secondary">Cargar ejemplo local</button></div></div>`;
+        document.getElementById('btnLoadExampleRoster').onclick = ()=>{
+          students = [ { id:'ex-1', nombre:'Alumno Ejemplo 1', universidad:'UMG Zacapa', horario:'16:00', telefono:'+502 5000 0001', preferredBus:'A' }, { id:'ex-2', nombre:'Alumno Ejemplo 2', universidad:'USAC Zacapa', horario:'18:00', telefono:'+502 5000 0002', preferredBus:'B' } ];
+          renderRoster(jornadaId);
+          toast('Datos de ejemplo cargados (local)');
+        };
+      }
+    });
   }
   const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
   const fmt = v => (v===undefined||v===null)?'':String(v);
