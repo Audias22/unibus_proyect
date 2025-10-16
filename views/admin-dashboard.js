@@ -47,7 +47,26 @@ export function AdminDashboardView(){
     try{ console.debug('AdminDashboardView: students snapshot', snap.size); }catch(e){}
     cached = (snap.docs||[]).map(d=> ({ id:d.id, ...d.data() }));
     render();
-  }, err=>{ console.error(err); toast('Error lectura estudiantes'); });
+  }, err=>{
+    console.error('listenStudents error:', err);
+    toast('Error lectura estudiantes (suscripción)');
+    // Fallback: intentar lectura puntual con getDocs para dar más información
+    (async ()=>{
+      try{
+        const { getDocs, query, orderBy, collection } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+        const { db } = await import('../src/firebase.js');
+        const q = query(collection(db, 'students'), orderBy('nombre','asc'));
+        const snap2 = await getDocs(q);
+        console.debug('AdminDashboardView: fallback getDocs size', snap2.size);
+        cached = (snap2.docs||[]).map(d=> ({ id:d.id, ...d.data() }));
+        render();
+        toast('Lectura puntual de estudiantes (fallback) completa');
+      }catch(e2){
+        console.error('fallback getDocs error', e2);
+        toast('Error leyendo estudiantes (fallback)');
+      }
+    })();
+  });
 
   $('#f_qstud').oninput = render;
   $('#btnRefresh').onclick = ()=>{ render(); toast('Refrescado'); };
