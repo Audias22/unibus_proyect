@@ -1,7 +1,7 @@
 import { db } from "./firebase.js";
 import {
   collection, addDoc, onSnapshot, query, where, orderBy,
-  updateDoc, deleteDoc, doc, serverTimestamp
+  updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit
 } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 
 const col = collection(db, "reservas");
@@ -35,3 +35,19 @@ export const marcarAbordoRegreso = (id, hora /* '1600' | '1730' */, adminEmail) 
     [`abordos.regreso_${hora}At`]: serverTimestamp(),
     [`abordos.regreso_${hora}By`]: adminEmail || null
   });
+
+// === Helpers ===
+// Busca una reserva existente por studentId + jornadaId (devuelve null si no existe)
+export async function findReservaByStudentAndJornada(studentId, jornadaId){
+  if(!studentId || !jornadaId) return null;
+  try{
+    const q = query(col, where('studentId','==', studentId), where('jornadaId','==', jornadaId), limit(1));
+    const snap = await getDocs(q);
+    if(!snap || !snap.docs || snap.docs.length===0) return null;
+    const d = snap.docs[0];
+    return { id: d.id, data: d.data() };
+  }catch(e){
+    console.error('findReservaByStudentAndJornada error', e);
+    return null;
+  }
+}

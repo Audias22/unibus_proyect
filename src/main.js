@@ -6,6 +6,7 @@ import { StudentRegisterView } from "../views/student-register.js";
 import { AdminCobrosView } from "../views/admin-cobros.js";
 import { AdminGestionView } from "../views/admin-gestion.js";
 import { AdminDashboardView } from "../views/admin-dashboard.js";
+import { AdminRosterView } from "../views/admin-roster.js";
 import { login, logout, watchAuth, current } from "./auth.js";
 
 
@@ -63,6 +64,7 @@ addRoute('/admin', ()=>{  // login simple
 });
 addRoute('/admin/cobros', AdminCobrosView);
 addRoute('/admin/gestion', AdminGestionView);
+addRoute('/admin/roster', AdminRosterView);
 addRoute('/register', StudentRegisterView);
 addRoute('/admin/dashboard', AdminDashboardView);
 
