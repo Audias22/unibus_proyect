@@ -44,7 +44,8 @@ export function AdminDashboardView(){
   }
 
   const stop = listenStudents(snap=>{
-    cached = snap.docs.map(d=> ({ id:d.id, ...d.data() }));
+    try{ console.debug('AdminDashboardView: students snapshot', snap.size); }catch(e){}
+    cached = (snap.docs||[]).map(d=> ({ id:d.id, ...d.data() }));
     render();
   }, err=>{ console.error(err); toast('Error lectura estudiantes'); });
 

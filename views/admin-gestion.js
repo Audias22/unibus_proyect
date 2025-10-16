@@ -595,7 +595,12 @@ async function exportXLSX(){
 
   function startStudentRoster(jornadaId){
     if(typeof studentStop==='function') studentStop();
-    studentStop = listenStudents(snap=>{ students = snap.docs.map(d=> ({ id: d.id, ...d.data() })); renderRoster(jornadaId); }, err=>{ console.error('students listen error', err); toast('Error leyendo estudiantes'); });
+    studentStop = listenStudents(snap=>{
+      try{ console.debug('startStudentRoster: snapshot size', snap.size); }catch(e){}
+      students = (snap.docs||[]).map(d=> ({ id: d.id, ...d.data() }));
+      if(!students.length) { console.debug('startStudentRoster: no students'); }
+      renderRoster(jornadaId);
+    }, err=>{ console.error('students listen error', err); toast('Error leyendo estudiantes'); });
   }
   const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
   const fmt = v => (v===undefined||v===null)?'':String(v);

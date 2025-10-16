@@ -8,7 +8,10 @@ export const createStudent = async (payload) => {
 };
 
 export const listenStudents = (cb, err) =>
-  onSnapshot(query(col, orderBy('nombre','asc')), cb, err);
+  onSnapshot(query(col, orderBy('nombre','asc')), (snap)=>{
+    try{ console.debug('listenStudents snapshot', snap.size); }catch(e){}
+    return cb(snap);
+  }, err);
 
 export const updateStudent = (id, patch) => updateDoc(doc(db,'students',id), patch);
 
