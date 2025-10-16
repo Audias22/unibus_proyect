@@ -2,8 +2,10 @@ import { $, CAPACIDAD, sabadoVigente } from "./ui.js";
 import { addRoute, start, goto } from "./router.js";
 import { HomeView } from "../views/home.js";
 import { StudentView } from "../views/student.js";
+import { StudentRegisterView } from "../views/student-register.js";
 import { AdminCobrosView } from "../views/admin-cobros.js";
 import { AdminGestionView } from "../views/admin-gestion.js";
+import { AdminDashboardView } from "../views/admin-dashboard.js";
 import { login, logout, watchAuth, current } from "./auth.js";
 
 
@@ -28,11 +30,13 @@ function paintNav(){
   nav.innerHTML = user ? `
     <a href="#/admin/cobros">Cobros</a>
     <a href="#/admin/gestion">Gestión</a>
+    <a href="#/admin/dashboard">Dashboard</a>
     <a href="#/student">Estudiante</a>
     <a href="#/" id="btnLogout">Salir (${user.email})</a>
   ` : `
     <a href="#/">Inicio</a>
     <a href="#/student">Estudiante</a>
+    <a href="#/register">Registro</a>
     <a href="#/admin">Admin</a>
   `;
   const btnOut = $('#btnLogout'); if(btnOut) btnOut.onclick = async e => { e.preventDefault(); await logout(); goto('/'); };
@@ -59,5 +63,7 @@ addRoute('/admin', ()=>{  // login simple
 });
 addRoute('/admin/cobros', AdminCobrosView);
 addRoute('/admin/gestion', AdminGestionView);
+addRoute('/register', StudentRegisterView);
+addRoute('/admin/dashboard', AdminDashboardView);
 
 start();

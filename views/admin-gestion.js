@@ -1,8 +1,10 @@
-import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast } from "../src/ui.js";
+import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast, PRECIO } from "../src/ui.js";
 import { listenByJornada, update, remove, create, marcarAbordoIda, marcarAbordoRegreso } from "../src/reservas.js";
+import { listenStudents } from "../src/students.js";
 import { current } from "../src/auth.js";
 
 let stop = null, rows = [];
+let studentStop = null, students = [];
 
 // ====== Beeps (WebAudio, sin tocar index.html) ======
 function beep(freq = 880, dur = 120) {
@@ -78,6 +80,7 @@ export function AdminGestionView(){
       <div class="row">
   <button class="btn btn-secondary" id="btnXLSX">Exportar Excel</button>
         <button class="btn btn-secondary" id="btnWA">WhatsApp (lista)</button>
+        <button class="btn btn-secondary" id="btnRoster">Roster estudiantes</button>
         <button class="btn btn-primary" id="btnScanQR">Escanear QR</button>
         <span class="right muted">Total: <b id="totales">0</b></span>
       </div>
@@ -200,7 +203,10 @@ export function AdminGestionView(){
 
   // Actualizar al cambiar la fecha
   $('#f_fecha').onchange = () => {
-    cargarPorFecha($('#f_fecha').value);
+    const f = $('#f_fecha').value;
+    cargarPorFecha(f);
+    // si el roster está activo, volver a renderizar con la nueva jornada
+    if(studentStop) startStudentRoster(f);
   };
 
   $('#f_tipo').oninput   = ()=>{ $('#f_hora').style.display = ($('#f_tipo').value==='solo_vuelta') ? 'block' : 'none'; render(); };
@@ -210,6 +216,11 @@ export function AdminGestionView(){
   $('#btnXLSX').onclick   = exportXLSX;
   // Ocultamos la opción WhatsApp porque no se usará/permitirá mejoras ahora
   try{ $('#btnWA').style.display = 'none'; }catch(e){}
+  // Roster button
+  $('#btnRoster').onclick = ()=>{
+    const f = $('#f_fecha').value || sabadoVigente();
+    startStudentRoster(f);
+  };
 }
 
 // ------- UI de detalle (para QR) -------
@@ -506,6 +517,85 @@ async function exportXLSX(){
       s.src = 'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js';
       s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
     }).catch(e=>{ console.error('No se pudo cargar xlsx:',e); toast('Error cargando librería XLSX'); });
+  }
+
+  // Roster: renderiza estudiantes y permite crear/actualizar reservas desde la lista
+  function renderRoster(jornadaId){
+    const $root = $('#tabla');
+    if(!students || !students.length){ $root.innerHTML = `<div class="muted">No hay estudiantes registrados.</div>`; return; }
+
+    const reservasByStudent = (rows||[]).reduce((acc,r)=>{ if(r.studentId) acc[r.studentId]=r; return acc; },{});
+
+    const list = students.map(s=>{
+      const ex = reservasByStudent[s.id] || {};
+      const pag = !!ex.pagado;
+      const ida = !!(ex.abordos && ex.abordos.idaAt);
+      const regreso = !!(ex.abordos && (ex.abordos.regreso_1600At || ex.abordos.regreso_1730At));
+      const bus = ex.bus || '';
+      const precio = ex.precio != null ? ex.precio : (window.PRECIO || 0);
+      return `
+        <div class="row card-row">
+          <div class="col">
+            <strong>${esc(s.nombre)}</strong><br>
+            <small class="muted">${esc(s.universidad||'')} • ${esc(s.turno||'')} • ${esc(s.telefono||'')}</small>
+          </div>
+          <div class="col cols-4">
+            <label><input type="checkbox" data-student="${s.id}" data-action="ida" ${ida? 'checked':''}> Ida</label>
+            <label><input type="checkbox" data-student="${s.id}" data-action="regreso" ${regreso? 'checked':''}> Regreso</label>
+            <label><input type="checkbox" data-student="${s.id}" data-action="pagado" ${pag? 'checked':''}> Pagado</label>
+            <input class="input" type="text" placeholder="Bus" data-student="${s.id}" data-action="bus" value="${esc(bus)}">
+            <input class="input small" type="number" min="0" data-student="${s.id}" data-action="precio" value="${precio}">
+            <button class="btn btn-sm btn-primary" data-student="${s.id}" data-action="save">Guardar</button>
+          </div>
+        </div>`;
+    }).join('\n');
+
+    $root.innerHTML = list;
+
+    // Delegación para controles del roster
+    $root.onclick = async (ev)=>{
+      const b = ev.target.closest('button');
+      if(b && b.dataset.action==='save'){
+        const sid = b.dataset.student;
+        // recoger valores del row
+        const checkPag = $root.querySelector(`input[data-student="${sid}"][data-action="pagado"]`);
+        const checkIda = $root.querySelector(`input[data-student="${sid}"][data-action="ida"]`);
+        const checkReg = $root.querySelector(`input[data-student="${sid}"][data-action="regreso"]`);
+        const inBus = $root.querySelector(`input[data-student="${sid}"][data-action="bus"]`);
+        const inPrecio = $root.querySelector(`input[data-student="${sid}"][data-action="precio"]`);
+
+        const payload = {
+          pagado: !!(checkPag && checkPag.checked),
+          precio: Number(inPrecio?.value||0),
+          bus: inBus?.value||''
+        };
+
+        // si existe reserva para este student en la jornada, actualizar; si no, crear
+        const existing = (rows||[]).find(r=>r.studentId===sid && r.jornadaId===( $('#f_fecha').value || sabadoVigente() ));
+        try{
+          if(existing){
+            await update(existing._id, payload);
+            toast('Reserva actualizada');
+          } else {
+            // crear reserva mínima
+            const student = students.find(s=>s.id===sid) || {};
+            const createPayload = {
+              nombre: student.nombre||'', universidad: student.universidad||'', telefono: student.telefono||'', ruta: '', parada: '',
+              tipo: 'solo_ida', fecha: ($('#f_fecha').value || sabadoVigente()), jornadaId: ($('#f_fecha').value || sabadoVigente()), precio: payload.precio, pagado: payload.pagado, bus: payload.bus, studentId: sid
+            };
+            await create(createPayload);
+            toast('Reserva creada');
+          }
+          // refrescar
+          cargarPorFecha($('#f_fecha').value);
+        }catch(e){ console.error(e); toast('Error guardando'); }
+      }
+    };
+  }
+
+  function startStudentRoster(jornadaId){
+    if(typeof studentStop==='function') studentStop();
+    studentStop = listenStudents(list=>{ students = list; renderRoster(jornadaId); });
   }
   const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
   const fmt = v => (v===undefined||v===null)?'':String(v);
