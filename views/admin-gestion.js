@@ -532,12 +532,12 @@ async function exportXLSX(){
       const ida = !!(ex.abordos && ex.abordos.idaAt);
       const regreso = !!(ex.abordos && (ex.abordos.regreso_1600At || ex.abordos.regreso_1730At));
       const bus = ex.bus || '';
-      const precio = ex.precio != null ? ex.precio : (window.PRECIO || 0);
+      const precio = ex.precio != null ? ex.precio : (PRECIO || 0);
       return `
         <div class="row card-row">
           <div class="col">
             <strong>${esc(s.nombre)}</strong><br>
-            <small class="muted">${esc(s.universidad||'')} • ${esc(s.turno||'')} • ${esc(s.telefono||'')}</small>
+            <small class="muted">${esc(s.universidad||'')} • ${esc(s.horario||'')} • ${esc(s.telefono||'')}</small>
           </div>
           <div class="col cols-4">
             <label><input type="checkbox" data-student="${s.id}" data-action="ida" ${ida? 'checked':''}> Ida</label>
@@ -595,7 +595,7 @@ async function exportXLSX(){
 
   function startStudentRoster(jornadaId){
     if(typeof studentStop==='function') studentStop();
-    studentStop = listenStudents(list=>{ students = list; renderRoster(jornadaId); });
+    studentStop = listenStudents(snap=>{ students = snap.docs.map(d=> ({ id: d.id, ...d.data() })); renderRoster(jornadaId); }, err=>{ console.error('students listen error', err); toast('Error leyendo estudiantes'); });
   }
   const stripHtml = s => (s||'').toString().replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
   const fmt = v => (v===undefined||v===null)?'':String(v);
