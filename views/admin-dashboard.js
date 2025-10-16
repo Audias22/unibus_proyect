@@ -10,6 +10,7 @@ export function AdminDashboardView(){
       <button class="btn btn-primary" id="btnRefresh">Refrescar</button>
     </div>
     <div id="studList" style="margin-top:12px">Cargando…</div>
+    <div id="studError" style="margin-top:12px"></div>
   </section>`;
 
   let cached = [];
@@ -64,6 +65,23 @@ export function AdminDashboardView(){
       }catch(e2){
         console.error('fallback getDocs error', e2);
         toast('Error leyendo estudiantes (fallback)');
+        const errEl = document.getElementById('studError');
+        if(errEl){
+          errEl.innerHTML = `<div class="card"><div style="color:#900">Error leyendo estudiantes (fallback). Revisa la consola.</div><div style="margin-top:8px"><button id="btnRetryStudents" class="btn btn-secondary">Reintentar lectura</button></div></div>`;
+          document.getElementById('btnRetryStudents').onclick = async ()=>{
+            errEl.innerHTML = 'Leyendo...';
+            try{
+              const { getDocs, query, orderBy, collection } = await import('https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js');
+              const { db } = await import('../src/firebase.js');
+              const q = query(collection(db, 'students'), orderBy('nombre','asc'));
+              const s2 = await getDocs(q);
+              cached = (s2.docs||[]).map(d=>({ id:d.id, ...d.data() }));
+              render();
+              errEl.innerHTML = '';
+              toast('Lectura completada');
+            }catch(e3){ console.error('retry error', e3); errEl.innerHTML = '<div style="color:#900">Reintentar falló. Ver consola.</div>'; }
+          };
+        }
       }
     })();
   });
