@@ -6,6 +6,29 @@ import { current } from "../src/auth.js";
 let stop = null, rows = [];
 let studentStop = null, students = [];
 
+// startStudentRoster: disponible en todo el módulo para que los handlers puedan llamarla
+function startStudentRoster(jornadaId){
+  if(typeof studentStop==='function') studentStop();
+  studentStop = listenStudents(snap=>{
+    try{ console.debug('startStudentRoster: snapshot size', snap.size); }catch(e){}
+    students = (snap.docs||[]).map(d=> ({ id: d.id, ...d.data() }));
+    if(!students.length) { console.debug('startStudentRoster: no students'); }
+    // si la vista está renderizada, llamar a renderRoster si existe
+    try{ if(typeof renderRoster==='function') renderRoster(jornadaId); }catch(e){}
+  }, err=>{ console.error('students listen error', err); toast('Error leyendo estudiantes');
+    // mostrar UI de ejemplo si hay problema
+    try{
+      const $root = document.getElementById('tabla');
+      if($root) $root.innerHTML = `<div class="card"><div style="color:#900">Permisos insuficientes para leer 'students'.</div><div style="margin-top:8px"><button id="btnLoadExampleRoster" class="btn btn-secondary">Cargar ejemplo local</button></div></div>`;
+      document.getElementById('btnLoadExampleRoster')?.addEventListener('click', ()=>{
+        students = [ { id:'ex-1', nombre:'Alumno Ejemplo 1', universidad:'UMG Zacapa', horario:'16:00', telefono:'+502 5000 0001', preferredBus:'A' }, { id:'ex-2', nombre:'Alumno Ejemplo 2', universidad:'USAC Zacapa', horario:'18:00', telefono:'+502 5000 0002', preferredBus:'B' } ];
+        try{ if(typeof renderRoster==='function') renderRoster(jornadaId); }catch(e){}
+        toast('Datos de ejemplo cargados (local)');
+      });
+    }catch(e){}
+  });
+}
+
 // ====== Beeps (WebAudio, sin tocar index.html) ======
 function beep(freq = 880, dur = 120) {
   try {
