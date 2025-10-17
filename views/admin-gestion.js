@@ -1,4 +1,5 @@
 import { $, esc, RUTAS, TIPO_LABEL, tipoTexto, sabadoVigente, csvVal, toast, PRECIO } from "../src/ui.js";
+import { USE_QR } from '../src/config.js';
 import { listenByJornada, update, remove, create, marcarAbordoIda, marcarAbordoRegreso } from "../src/reservas.js";
 import { listenStudents } from "../src/students.js";
 import { current } from "../src/auth.js";
@@ -125,7 +126,16 @@ export function AdminGestionView(){
   </section>`;
 
   // ========= Escaneo QR =========
+  // Si la bandera USE_QR está desactivada, ocultamos el botón de escaneo para evitar confusión
+  try{ if(!USE_QR) { $('#btnScanQR').style.display = 'none'; } }catch(e){}
+
   $('#btnScanQR').onclick = async () => {
+    if(!USE_QR){
+      // protección adicional: mostrar panel informativo si alguien fuerza la acción
+      $('#qrScanPanel').style.display = 'block';
+      $('#qr-result').textContent = 'Escáner QR desactivado en la configuración.';
+      return;
+    }
     $('#qrScanPanel').style.display = 'block';
     // asegurar que el panel esté visible en pantalla (móviles)
     setTimeout(()=>{ document.getElementById('qrScanPanel').scrollIntoView({behavior:'smooth', block:'center'}); }, 80);
